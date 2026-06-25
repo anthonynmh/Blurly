@@ -1,5 +1,9 @@
+pub mod ai_keys;
+pub mod ai_settings;
+pub mod analysis;
 pub mod db;
 pub mod holdings;
 pub mod portfolio;
 pub mod settings;
 pub mod snapshots;
+pub mod watchlist;
