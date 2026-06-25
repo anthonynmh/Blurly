@@ -18,7 +18,7 @@ export const aiKeysService = {
     return invoke('has_api_key', { provider });
   },
 
-  test(provider: string, model: string): Promise<TestConnectionResult> {
-    return invoke('test_api_key', { provider, model });
+  test(provider: string, key: string, model: string): Promise<TestConnectionResult> {
+    return invoke('test_api_key', { provider, key, model });
   },
 };

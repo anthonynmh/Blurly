@@ -4,8 +4,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -242,15 +243,19 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   const queryClient = useQueryClient();
   const [testing, setTesting] = useState(false);
 
-  const { data: hasKey } = useQuery({
+  const { data: hasKey, error: hasKeyError } = useQuery({
     queryKey: ['ai-has-key', provider],
     queryFn: () => aiKeysService.has(provider),
+    retry: false,
   });
 
   const keyForm = useForm<KeyFormValues>({
     resolver: zodResolver(keySchema),
     defaultValues: { apiKey: '' },
+    mode: 'onChange',
   });
+  const typedKey = keyForm.watch('apiKey');
+  const typedKeyValid = (typedKey ?? '').trim().length >= 8;
 
   const saveKey = useMutation({
     mutationFn: (values: KeyFormValues) => aiKeysService.set(provider, values.apiKey),
@@ -274,9 +279,11 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   });
 
   async function handleTest() {
+    if (!typedKeyValid) return;
     setTesting(true);
     try {
-      const result = await aiKeysService.test(provider, 'gpt-4o');
+      const aiModel = await aiSettingsService.get();
+      const result = await aiKeysService.test(provider, typedKey.trim(), aiModel.model);
       if (result.ok) {
         toast.success(`✓ ${result.message}`);
       } else {
@@ -305,7 +312,14 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
           Keys are stored in macOS Keychain and only read when running analysis. They are never sent anywhere except the provider.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {hasKeyError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Couldn&apos;t read keychain</AlertTitle>
+            <AlertDescription>{(hasKeyError as Error).message}</AlertDescription>
+          </Alert>
+        )}
         <Form {...keyForm}>
           <form
             onSubmit={keyForm.handleSubmit((v) => saveKey.mutate(v))}
@@ -328,34 +342,33 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
                   </FormControl>
                   <FormDescription>
                     For OpenAI, paste a key from{' '}
-                    <code>platform.openai.com → API keys</code>.
+                    <code>platform.openai.com → API keys</code>. You can test it before saving.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={saveKey.isPending || disabled}>
-                {saveKey.isPending ? 'Saving…' : hasKey ? 'Replace key' : 'Save key'}
-              </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleTest}
-                disabled={testing || !hasKey || disabled}
+                disabled={testing || !typedKeyValid || disabled}
               >
                 {testing ? 'Testing…' : 'Test connection'}
               </Button>
-              {hasKey && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => deleteKey.mutate()}
-                  disabled={deleteKey.isPending || disabled}
-                >
-                  <Trash2 className="h-4 w-4" /> Remove key
-                </Button>
-              )}
+              <Button type="submit" disabled={saveKey.isPending || !typedKeyValid || disabled}>
+                {saveKey.isPending ? 'Saving…' : hasKey ? 'Replace key' : 'Save key'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => deleteKey.mutate()}
+                disabled={deleteKey.isPending || disabled}
+                title={hasKey ? 'Remove the saved key from Keychain' : 'Clear any orphaned com.blurly.app entry in Keychain'}
+              >
+                <Trash2 className="h-4 w-4" /> {hasKey ? 'Remove key' : 'Clear keychain entry'}
+              </Button>
             </div>
           </form>
         </Form>

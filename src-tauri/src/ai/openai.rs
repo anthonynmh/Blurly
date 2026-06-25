@@ -2,13 +2,21 @@
 //! tool when web search is enabled. All OpenAI-specific shapes stay in this file
 //! so swapping in another provider only touches one module.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::ai::prompts::{focus_for, time_window_hint, BASE_PERSONA};
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
-const MODELS_URL: &str = "https://api.openai.com/v1/models";
+
+fn http_client(timeout_secs: u64) -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .expect("build reqwest client")
+}
 
 pub struct OpenAiProvider;
 
@@ -37,11 +45,18 @@ pub struct Source {
 }
 
 impl OpenAiProvider {
-    pub async fn test_connection(&self, key: &str, _model: &str) -> Result<(), String> {
-        let client = reqwest::Client::new();
-        let res = client
-            .get(MODELS_URL)
+    /// Cheap round-trip that exercises the same permission as actual analysis runs.
+    /// Uses POST /v1/responses with max_output_tokens=16 so "Test green ⇒ Run green".
+    pub async fn test_connection(&self, key: &str, model: &str) -> Result<(), String> {
+        let body = json!({
+            "model": model,
+            "input": "ping",
+            "max_output_tokens": 16,
+        });
+        let res = http_client(10)
+            .post(RESPONSES_URL)
             .bearer_auth(key)
+            .json(&body)
             .send()
             .await
             .map_err(|e| format!("Network error: {e}"))?;
@@ -50,7 +65,7 @@ impl OpenAiProvider {
         }
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        Err(format!("OpenAI {status}: {}", body.chars().take(200).collect::<String>()))
+        Err(format!("OpenAI {status}: {}", body.chars().take(300).collect::<String>()))
     }
 
     pub async fn run_analysis(&self, key: &str, req: AnalysisRequest<'_>) -> Result<AnalysisOutput, String> {
@@ -77,8 +92,7 @@ impl OpenAiProvider {
             body["tools"] = json!([{ "type": "web_search_preview" }]);
         }
 
-        let client = reqwest::Client::new();
-        let res = client
+        let res = http_client(90)
             .post(RESPONSES_URL)
             .bearer_auth(key)
             .json(&body)

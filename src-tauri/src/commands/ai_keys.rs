@@ -38,9 +38,14 @@ pub async fn set_api_key(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let entry = keychain_entry(&provider)?;
-        entry
-            .set_password(&key)
-            .map_err(|e| CommandError::Keyring(e.to_string()))?;
+        if let Err(e) = entry.set_password(&key) {
+            eprintln!("[blurly] set_password failed for provider={provider}: {e}");
+            return Err(CommandError::Keyring(format!(
+                "macOS Keychain refused the write ({e}). \
+                 If this app is ad-hoc signed (Gatekeeper bypassed), open Keychain Access \
+                 and delete any existing 'com.blurly.app' items, then try again."
+            )));
+        }
         let conn = db.lock();
         set_key_ref(&conn, Some(&provider))?;
         Ok(())
@@ -74,25 +79,26 @@ pub async fn has_api_key(provider: String) -> Result<bool, CommandError> {
         match entry.get_password() {
             Ok(_) => Ok(true),
             Err(keyring::Error::NoEntry) => Ok(false),
-            Err(e) => Err(CommandError::Keyring(e.to_string())),
+            Err(e) => {
+                eprintln!("[blurly] get_password failed for provider={provider}: {e}");
+                Err(CommandError::Keyring(format!(
+                    "macOS Keychain read failed ({e}). Check Keychain Access for stuck items under 'com.blurly.app'."
+                )))
+            }
         }
     })
     .await
     .map_err(|e| CommandError::Join(e.to_string()))?
 }
 
+/// Test a key BEFORE it's saved — accepts the typed key directly so the user can
+/// validate before committing to keychain. JS never sees the saved key, by design.
 #[tauri::command]
 pub async fn test_api_key(
     provider: String,
+    key: String,
     model: String,
 ) -> Result<TestConnectionResult, CommandError> {
-    let key = tauri::async_runtime::spawn_blocking({
-        let provider = provider.clone();
-        move || read_key(&provider)
-    })
-    .await
-    .map_err(|e| CommandError::Join(e.to_string()))??;
-
     match provider.as_str() {
         "openai" => match crate::ai::openai::OpenAiProvider.test_connection(&key, &model).await {
             Ok(()) => Ok(TestConnectionResult {
