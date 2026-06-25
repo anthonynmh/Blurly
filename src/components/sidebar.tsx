@@ -1,11 +1,15 @@
 import { NavLink } from 'react-router-dom';
-import { BarChart3, Camera, Layers, Settings } from 'lucide-react';
+import { BarChart3, Bot, Camera, Eye, History, Layers, Settings, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
   { to: '/holdings', label: 'Holdings', icon: Layers, end: false },
   { to: '/snapshots', label: 'Snapshots', icon: Camera, end: false },
+  { to: '/analyst', label: 'Analyst', icon: Sparkles, end: false },
+  { to: '/analysis-history', label: 'Analysis History', icon: History, end: false },
+  { to: '/watchlist', label: 'Watchlist', icon: Eye, end: false },
+  { to: '/ai-settings', label: 'AI Settings', icon: Bot, end: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ];
 

@@ -88,3 +88,140 @@ export interface Settings {
   createdAt: string;
   updatedAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Watchlist
+// ---------------------------------------------------------------------------
+
+export interface WatchlistItem {
+  id: string;
+  symbol: string;
+  name?: string;
+  assetClass?: string;
+  sector?: string;
+  region?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NewWatchlistItem = Omit<WatchlistItem, 'id' | 'createdAt' | 'updatedAt'>;
+export type UpdateWatchlistItem = Partial<NewWatchlistItem>;
+
+// ---------------------------------------------------------------------------
+// AI Settings
+// ---------------------------------------------------------------------------
+
+export type AiProviderId = 'openai';
+
+export interface AiSettings {
+  provider: AiProviderId | string;
+  model: string;
+  webSearchEnabled: boolean;
+  includeExactValues: boolean;
+  includeQuantities: boolean;
+  includeNotes: boolean;
+  keyRef?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateAiSettings {
+  provider?: string;
+  model?: string;
+  webSearchEnabled?: boolean;
+  includeExactValues?: boolean;
+  includeQuantities?: boolean;
+  includeNotes?: boolean;
+}
+
+export interface TestConnectionResult {
+  ok: boolean;
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
+// Analyst — runs, context, results
+// ---------------------------------------------------------------------------
+
+export type AnalysisType =
+  | 'PortfolioReview'
+  | 'MacroReview'
+  | 'SectorReview'
+  | 'HoldingReview'
+  | 'RebalancingConsiderations';
+
+export type TimeWindow = '7d' | '30d' | '90d' | '1y';
+
+export type AnalysisStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+export interface AnalysisRun {
+  id: string;
+  analysisType: AnalysisType | string;
+  provider: string;
+  model: string;
+  status: AnalysisStatus;
+  inputContextJson: string;
+  outputMarkdown?: string;
+  outputJson?: string;
+  sourcesJson?: string;
+  errorMessage?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface RunAnalysisInput {
+  inputContextJson: string;
+  analysisType: AnalysisType;
+  timeWindow: TimeWindow;
+}
+
+/** Privacy flags decide what shape of holding context goes to the model. */
+export interface PrivacyFlags {
+  includeExactValues: boolean;
+  includeQuantities: boolean;
+  includeNotes: boolean;
+}
+
+/**
+ * Holding shape sent to the AI. Strips fields per PrivacyFlags.
+ * Always includes: symbol, assetClass, currency, portfolioWeight, asOfDate.
+ */
+export interface HoldingAnalysisInput {
+  symbol: string;
+  name?: string;
+  assetClass: AssetClass;
+  /** Only present when PrivacyFlags.includeQuantities is true. */
+  quantity?: number;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  currentPrice?: number;
+  currency: string;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  marketValue?: number;
+  /** 0..1, always included. */
+  portfolioWeight: number;
+  sector?: string;
+  region?: string;
+  asOfDate: string;
+}
+
+export interface AnalysisPortfolioContext {
+  generatedAt: string;
+  baseCurrency: string;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  totalPortfolioValue?: number;
+  holdings: HoldingAnalysisInput[];
+  breakdowns: {
+    assetClass: Breakdown[];
+    sector: Breakdown[];
+    region: Breakdown[];
+  };
+  topHoldings: HoldingAnalysisInput[];
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  cashAndMoneyMarketValue?: number;
+}
+
+export interface AnalysisSource {
+  title?: string;
+  url: string;
+}
