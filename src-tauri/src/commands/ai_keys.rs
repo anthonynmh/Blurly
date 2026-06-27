@@ -121,8 +121,19 @@ fn status_for_missing_entry(
         )),
         None => None,
     };
-    let status = if message.is_some() { "stale" } else { "missing" };
-    resolved_status(provider, key_ref, status, message, stored_signing, current_signing)
+    let status = if message.is_some() {
+        "stale"
+    } else {
+        "missing"
+    };
+    resolved_status(
+        provider,
+        key_ref,
+        status,
+        message,
+        stored_signing,
+        current_signing,
+    )
 }
 
 fn verify_saved_key(provider: &str, expected_key: &str) -> Result<(), CommandError> {
@@ -345,7 +356,10 @@ pub async fn test_api_key(
 ) -> Result<TestConnectionResult, CommandError> {
     let key = key.trim().to_string();
     match provider.as_str() {
-        "openai" => match crate::ai::openai::OpenAiProvider.test_connection(&key, &model).await {
+        "openai" => match crate::ai::openai::OpenAiProvider
+            .test_connection(&key, &model)
+            .await
+        {
             Ok(()) => Ok(TestConnectionResult {
                 ok: true,
                 message: "Connected".to_string(),

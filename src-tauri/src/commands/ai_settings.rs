@@ -62,11 +62,15 @@ pub async fn update_ai_settings(
 
         let provider = input.provider.unwrap_or(existing.provider);
         let model = input.model.unwrap_or(existing.model);
-        let web_search_enabled = input.web_search_enabled.unwrap_or(existing.web_search_enabled);
+        let web_search_enabled = input
+            .web_search_enabled
+            .unwrap_or(existing.web_search_enabled);
         let include_exact_values = input
             .include_exact_values
             .unwrap_or(existing.include_exact_values);
-        let include_quantities = input.include_quantities.unwrap_or(existing.include_quantities);
+        let include_quantities = input
+            .include_quantities
+            .unwrap_or(existing.include_quantities);
         let include_notes = input.include_notes.unwrap_or(existing.include_notes);
 
         conn.execute(
