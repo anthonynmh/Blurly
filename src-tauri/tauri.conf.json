@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": "all",
     "macOS": {
       "signingIdentity": "Developer ID Application: Anthony Neo (D4NKPP62S5)"
     },
