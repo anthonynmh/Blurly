@@ -129,9 +129,29 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-Output: `src-tauri/target/release/bundle/macos/Blurly.app`
+Default output:
+
+- `src-tauri/target/release/bundle/macos/Blurly.app`
 
 > **Note:** The unsigned app will trigger macOS Gatekeeper on first launch. Right-click → Open to bypass, or ad-hoc sign with `codesign --force --deep --sign - Blurly.app`.
+
+Create and validate the standalone zip artifact:
+
+```bash
+pnpm release:macos:standalone
+pnpm release:macos:validate:standalone
+```
+
+That produces `src-tauri/target/release/bundle/macos/Blurly_<version>_aarch64_app.zip`.
+
+Create a DMG explicitly when needed:
+
+```bash
+pnpm release:macos:dmg
+pnpm release:macos:validate
+```
+
+The DMG script detaches any stale `/Volumes/Blurly` mount and removes leftover writable staging images before invoking Tauri's DMG bundler. If the DMG step still fails, ship the signed `.app` or standalone zip instead of treating the default build as failed.
 
 ## Data Location
 

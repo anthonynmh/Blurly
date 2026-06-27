@@ -1,6 +1,6 @@
 [package]
 name = "blurly"
-version = "0.2.0"
+version = "0.2.1"
 description = "Blurly — Local Portfolio Tracker"
 authors = []
 edition = "2021"
