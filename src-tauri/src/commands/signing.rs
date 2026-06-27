@@ -8,34 +8,8 @@ use std::env;
 use std::process::Command;
 use std::sync::OnceLock;
 
-use serde::{Deserialize, Serialize};
-
 use crate::error::CommandError;
-
-/// Full signing identity for the running executable.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SigningIdentity {
-    pub team_id: Option<String>,
-    /// First (leaf) Authority= line from codesign output.
-    pub authority: Option<String>,
-    /// CFBundleIdentifier from codesign output.
-    pub identifier: Option<String>,
-    /// CDHash SHA-256 hex string.
-    pub cdhash: Option<String>,
-    /// True when ad-hoc signed (no TeamIdentifier and/or `Signature=adhoc`).
-    pub is_adhoc: bool,
-    pub executable_path: String,
-}
-
-/// Compact subset used for comparison in AI-key diagnostics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SigningIdentitySummary {
-    pub authority: Option<String>,
-    pub cdhash: Option<String>,
-    pub is_adhoc: bool,
-}
+use crate::models::SigningIdentity;
 
 static SIGNING_IDENTITY: OnceLock<SigningIdentity> = OnceLock::new();
 

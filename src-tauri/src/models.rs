@@ -191,6 +191,40 @@ pub struct UpdateAiSettings {
     pub include_notes: Option<bool>,
 }
 
+/// Compact signing-identity summary stored alongside a key reference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SigningIdentitySummary {
+    pub authority: Option<String>,
+    pub cdhash: Option<String>,
+    pub is_adhoc: bool,
+}
+
+/// Full signing identity returned by get_app_signing_identity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SigningIdentity {
+    pub team_id: Option<String>,
+    pub authority: Option<String>,
+    pub identifier: Option<String>,
+    pub cdhash: Option<String>,
+    pub is_adhoc: bool,
+    pub executable_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApiKeyStatus {
+    pub provider: String,
+    pub key_ref: Option<String>,
+    pub status: String,
+    pub message: Option<String>,
+    /// Signing identity that was active when the key was last saved.
+    pub signed_by_when_saved: Option<SigningIdentitySummary>,
+    /// Signing identity of the currently running process.
+    pub signed_by_now: Option<SigningIdentitySummary>,
+}
+
 // ---------------------------------------------------------------------------
 // Analysis runs
 // ---------------------------------------------------------------------------
