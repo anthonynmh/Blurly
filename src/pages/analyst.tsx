@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Play, Sparkles } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,7 +18,7 @@ import { holdingService } from '@/services/holding-service';
 import { settingsService } from '@/services/settings-service';
 import { buildAnalysisContext } from '@/lib/analysis';
 import { isWindows } from '@/lib/platform';
-import type { AnalysisRun, AnalysisType, TimeWindow } from '@/lib/types';
+import type { AnalysisRun, AnalysisType, ApiKeyStatus, TimeWindow } from '@/lib/types';
 
 const ANALYSIS_TYPES: { value: AnalysisType; label: string; description: string }[] = [
   { value: 'PortfolioReview', label: 'Portfolio Review', description: 'Full memo: rebalancing + recent news.' },
@@ -50,10 +51,16 @@ export default function AnalystPage() {
     queryKey: ['ai-settings'],
     queryFn: () => aiSettingsService.get(),
   });
-  const { data: hasKey } = useQuery({
-    queryKey: ['ai-has-key', aiSettings?.provider ?? 'openai'],
-    queryFn: () => aiKeysService.has(aiSettings?.provider ?? 'openai'),
+  const { data: keyStatus, error: keyStatusError } = useQuery({
+    queryKey: ['ai-key-status', aiSettings?.provider ?? 'openai'],
+    queryFn: () => aiKeysService.status(aiSettings?.provider ?? 'openai'),
     enabled: !!aiSettings,
+    retry: false,
+  });
+  const { data: signingId } = useQuery({
+    queryKey: ['app-signing-identity'],
+    queryFn: () => aiKeysService.signingIdentity(),
+    staleTime: Infinity,
   });
   const { data: holdings } = useQuery({
     queryKey: ['holdings', 'default'],
@@ -90,7 +97,13 @@ export default function AnalystPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const canRun = !!holdings && holdings.length > 0 && !!hasKey && !windowsBlocked && !runMutation.isPending;
+  const canRun =
+    !!holdings &&
+    holdings.length > 0 &&
+    keyStatus?.status === 'saved' &&
+    !windowsBlocked &&
+    !runMutation.isPending;
+  const keyStatusMeta = keyStatus ? getAnalystKeyStatusMeta(keyStatus) : null;
 
   return (
     <div className="space-y-6">
@@ -174,9 +187,46 @@ export default function AnalystPage() {
             </div>
           )}
 
-          {!hasKey && !windowsBlocked && (
+          {keyStatusError && !windowsBlocked && (
+            <Alert variant="destructive">
+              <AlertTitle>Couldn&apos;t read key status</AlertTitle>
+              <AlertDescription>{(keyStatusError as Error).message}</AlertDescription>
+            </Alert>
+          )}
+
+          {keyStatusMeta && !windowsBlocked && keyStatusMeta.kind === 'error' && (
+            <Alert variant="destructive">
+              <AlertTitle>{keyStatusMeta.title}</AlertTitle>
+              <AlertDescription>
+                {keyStatusMeta.description}
+                {signingId && (
+                  <p className="mt-1 text-xs opacity-80">
+                    Build identity: {signingId.authority ?? 'ad-hoc'}
+                    {signingId.cdhash ? ` — ${signingId.cdhash.slice(0, 12)}…` : ''}
+                  </p>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {keyStatusMeta && !windowsBlocked && keyStatusMeta.kind === 'stale' && (
+            <Alert>
+              <AlertTitle>{keyStatusMeta.title}</AlertTitle>
+              <AlertDescription>
+                {keyStatusMeta.description}
+                {signingId && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Build identity: {signingId.authority ?? 'ad-hoc'}
+                    {signingId.cdhash ? ` — ${signingId.cdhash.slice(0, 12)}…` : ''}
+                  </p>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {keyStatusMeta && !windowsBlocked && keyStatusMeta.kind === 'missing' && (
             <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-              No API key configured. Go to <strong>AI Settings</strong> and save one to enable Run.
+              {keyStatusMeta.description}
             </div>
           )}
 
@@ -231,4 +281,38 @@ export default function AnalystPage() {
       )}
     </div>
   );
+}
+
+function getAnalystKeyStatusMeta(status: ApiKeyStatus): {
+  kind: 'saved' | 'missing' | 'stale' | 'error';
+  title: string;
+  description: string;
+} {
+  switch (status.status) {
+    case 'saved':
+      return {
+        kind: 'saved',
+        title: 'Saved key available',
+        description: 'Blurly can read the active provider key from Keychain.',
+      };
+    case 'stale':
+      return {
+        kind: 'stale',
+        title: 'Saved key needs to be re-added',
+        description: status.message ?? 'Blurly expected a saved key, but Keychain does not currently have a readable entry. Go to AI Settings, clear the stale entry, then save the key again.',
+      };
+    case 'error':
+      return {
+        kind: 'error',
+        title: 'Keychain read failed',
+        description: status.message ?? 'Blurly could not read the saved key from Keychain.',
+      };
+    case 'missing':
+    default:
+      return {
+        kind: 'missing',
+        title: 'No API key configured',
+        description: 'No readable key is currently saved. Go to AI Settings, then save a key to enable Run.',
+      };
+  }
 }

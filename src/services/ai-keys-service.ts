@@ -1,17 +1,21 @@
 import { invoke } from '@/lib/invoke';
-import type { TestConnectionResult } from '@/lib/types';
+import type { ApiKeyStatus, SigningIdentity, TestConnectionResult } from '@/lib/types';
 
 /**
  * BYOK key storage. Keys live in the OS keychain (macOS Keychain via the
  * Rust `keyring` crate) — never in SQLite, never exposed back to JS.
  */
 export const aiKeysService = {
-  set(provider: string, key: string): Promise<void> {
-    return invoke('set_api_key', { provider, key });
+  set(provider: string, key: string): Promise<ApiKeyStatus> {
+    return invoke('set_api_key', { provider, key: key.trim() });
   },
 
   delete(provider: string): Promise<void> {
     return invoke('delete_api_key', { provider });
+  },
+
+  status(provider: string): Promise<ApiKeyStatus> {
+    return invoke('get_api_key_status', { provider });
   },
 
   has(provider: string): Promise<boolean> {
@@ -19,6 +23,10 @@ export const aiKeysService = {
   },
 
   test(provider: string, key: string, model: string): Promise<TestConnectionResult> {
-    return invoke('test_api_key', { provider, key, model });
+    return invoke('test_api_key', { provider, key: key.trim(), model });
+  },
+
+  signingIdentity(): Promise<SigningIdentity> {
+    return invoke('get_app_signing_identity');
   },
 };

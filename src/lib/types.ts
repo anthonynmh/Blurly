@@ -139,6 +139,21 @@ export interface UpdateAiSettings {
   includeNotes?: boolean;
 }
 
+export interface SigningIdentitySummary {
+  authority?: string;
+  cdhash?: string;
+  isAdhoc: boolean;
+}
+
+export interface SigningIdentity {
+  teamId?: string;
+  authority?: string;
+  identifier?: string;
+  cdhash?: string;
+  isAdhoc: boolean;
+  executablePath: string;
+}
+
 export type ApiKeyPresenceStatus = 'saved' | 'missing' | 'stale' | 'error';
 
 export interface ApiKeyStatus {
@@ -146,6 +161,10 @@ export interface ApiKeyStatus {
   keyRef?: string;
   status: ApiKeyPresenceStatus;
   message?: string;
+  /** Signing identity that was active when the key was last saved. */
+  signedByWhenSaved?: SigningIdentitySummary;
+  /** Signing identity of the currently running process. */
+  signedByNow?: SigningIdentitySummary;
 }
 
 export interface TestConnectionResult {
