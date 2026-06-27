@@ -26,6 +26,7 @@ import { WindowsNotReadyBanner } from '@/components/windows-not-ready-banner';
 import { aiKeysService } from '@/services/ai-keys-service';
 import { aiSettingsService } from '@/services/ai-settings-service';
 import { isWindows } from '@/lib/platform';
+import type { ApiKeyStatus } from '@/lib/types';
 
 const settingsSchema = z.object({
   provider: z.string().min(1),
@@ -105,7 +106,7 @@ export default function AiSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">AI Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Bring your own API key. Keys are stored in your macOS Keychain — never in Blurly&apos;s database.
+          Bring your own API key. Keys are stored encrypted in Blurly&apos;s app data directory — never in the database, never sent anywhere except the provider.
         </p>
       </div>
 
@@ -242,11 +243,18 @@ interface ApiKeyCardProps {
 function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   const queryClient = useQueryClient();
   const [testing, setTesting] = useState(false);
+  const statusQueryKey = ['ai-key-status', provider] as const;
 
-  const { data: hasKey, error: hasKeyError } = useQuery({
-    queryKey: ['ai-has-key', provider],
-    queryFn: () => aiKeysService.has(provider),
+  const { data: keyStatus, error: keyStatusError } = useQuery({
+    queryKey: statusQueryKey,
+    queryFn: () => aiKeysService.status(provider),
     retry: false,
+  });
+
+  const { data: signingId } = useQuery({
+    queryKey: ['app-signing-identity'],
+    queryFn: () => aiKeysService.signingIdentity(),
+    staleTime: Infinity,
   });
 
   const keyForm = useForm<KeyFormValues>({
@@ -256,14 +264,18 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   });
   const typedKey = keyForm.watch('apiKey');
   const typedKeyValid = (typedKey ?? '').trim().length >= 8;
+  const hasSavedKey = keyStatus?.status === 'saved';
+  const isStaleKey = keyStatus?.status === 'stale';
+  const statusMeta = keyStatus ? getApiKeyStatusMeta(keyStatus) : null;
 
   const saveKey = useMutation({
     mutationFn: (values: KeyFormValues) => aiKeysService.set(provider, values.apiKey),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['ai-has-key', provider] });
+    onSuccess: (status) => {
+      queryClient.setQueryData(statusQueryKey, status);
       void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
+      void queryClient.invalidateQueries({ queryKey: statusQueryKey });
       keyForm.reset({ apiKey: '' });
-      toast.success('API key saved to Keychain');
+      toast.success('API key saved');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -271,7 +283,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   const deleteKey = useMutation({
     mutationFn: () => aiKeysService.delete(provider),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['ai-has-key', provider] });
+      void queryClient.invalidateQueries({ queryKey: statusQueryKey });
       void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
       toast.success('API key removed');
     },
@@ -302,23 +314,46 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
         <CardTitle className="flex items-center gap-2">
           <KeyRound className="h-4 w-4" />
           API key
-          {hasKey && (
+          {hasSavedKey && (
             <Badge variant="secondary" className="ml-2 text-xs">
               <CheckCircle2 className="h-3 w-3" /> Connected
             </Badge>
           )}
         </CardTitle>
         <CardDescription>
-          Keys are stored in macOS Keychain and only read when running analysis. They are never sent anywhere except the provider.
+          Keys are encrypted at rest with ChaCha20-Poly1305 (key derived per-machine) and only read when running analysis. They are never sent anywhere except the provider.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {hasKeyError && (
+        {keyStatusError && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Couldn&apos;t read keychain</AlertTitle>
-            <AlertDescription>{(hasKeyError as Error).message}</AlertDescription>
+            <AlertTitle>Couldn&apos;t read saved key</AlertTitle>
+            <AlertDescription>{(keyStatusError as Error).message}</AlertDescription>
           </Alert>
+        )}
+        {!keyStatusError && !statusMeta && <Skeleton className="h-24" />}
+        {statusMeta && keyStatus && (
+          <div className={statusMeta.containerClass}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{statusMeta.title}</p>
+                <p className="text-sm text-muted-foreground">{statusMeta.description}</p>
+              </div>
+              <Badge variant={statusMeta.badgeVariant}>{statusMeta.badgeLabel}</Badge>
+            </div>
+            <div className="grid gap-1 text-xs text-muted-foreground md:grid-cols-2">
+              <p>Active provider: <code>{keyStatus.provider}</code></p>
+              <p>Saved key reference: <code>{keyStatus.keyRef ?? 'none'}</code></p>
+            </div>
+            {signingId && (
+              <p className={`text-xs ${signingId.isAdhoc ? 'text-destructive' : 'text-muted-foreground'}`}>
+                Build identity: {signingId.authority ?? 'ad-hoc'}
+                {signingId.cdhash ? ` — ${signingId.cdhash.slice(0, 12)}…` : ''}
+                {signingId.isAdhoc ? ' — keys will not survive rebuilds' : ''}
+              </p>
+            )}
+          </div>
         )}
         <Form {...keyForm}>
           <form
@@ -330,7 +365,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
               name="apiKey"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{hasKey ? 'Replace key' : 'Enter key'}</FormLabel>
+                  <FormLabel>{hasSavedKey ? 'Replace key' : 'Enter key'}</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
@@ -358,21 +393,74 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
                 {testing ? 'Testing…' : 'Test connection'}
               </Button>
               <Button type="submit" disabled={saveKey.isPending || !typedKeyValid || disabled}>
-                {saveKey.isPending ? 'Saving…' : hasKey ? 'Replace key' : 'Save key'}
+                {saveKey.isPending ? 'Saving…' : hasSavedKey ? 'Replace saved key' : 'Save key'}
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => deleteKey.mutate()}
                 disabled={deleteKey.isPending || disabled}
-                title={hasKey ? 'Remove the saved key from Keychain' : 'Clear any orphaned com.blurly.app entry in Keychain'}
+                title={
+                  hasSavedKey
+                    ? 'Remove the saved key from disk'
+                    : isStaleKey
+                      ? 'Clear the stale key reference'
+                      : 'Clear any orphaned secret file'
+                }
               >
-                <Trash2 className="h-4 w-4" /> {hasKey ? 'Remove key' : 'Clear keychain entry'}
+                <Trash2 className="h-4 w-4" /> {hasSavedKey ? 'Remove saved key' : isStaleKey ? 'Clear stale entry' : 'Clear saved key'}
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Test validates the typed key only. Save is still required before Analyst can run.
+            </p>
           </form>
         </Form>
       </CardContent>
     </Card>
   );
+}
+
+function getApiKeyStatusMeta(status: ApiKeyStatus): {
+  title: string;
+  description: string;
+  badgeLabel: string;
+  badgeVariant: 'secondary' | 'outline' | 'destructive';
+  containerClass: string;
+} {
+  switch (status.status) {
+    case 'saved':
+      return {
+        title: 'Key saved',
+        description: 'Blurly can decrypt the saved key for the active provider. Analyst is allowed to use it.',
+        badgeLabel: 'Saved',
+        badgeVariant: 'secondary',
+        containerClass: 'space-y-3 rounded-md border bg-muted/30 p-3',
+      };
+    case 'stale':
+      return {
+        title: 'Saved-state mismatch',
+        description: status.message ?? 'Blurly expected a saved key, but the encrypted secret file is missing.',
+        badgeLabel: 'Stale',
+        badgeVariant: 'outline',
+        containerClass: 'space-y-3 rounded-md border border-dashed p-3',
+      };
+    case 'error':
+      return {
+        title: 'Saved key unreadable',
+        description: status.message ?? 'Blurly could not decrypt the saved key. This usually means the machine identifier changed; clear and re-save.',
+        badgeLabel: 'Error',
+        badgeVariant: 'destructive',
+        containerClass: 'space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-3',
+      };
+    case 'missing':
+    default:
+      return {
+        title: 'No key saved',
+        description: 'No readable key is currently saved for the active provider.',
+        badgeLabel: 'Missing',
+        badgeVariant: 'outline',
+        containerClass: 'space-y-3 rounded-md border border-dashed p-3',
+      };
+  }
 }

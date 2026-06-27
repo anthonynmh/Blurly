@@ -1,13 +1,20 @@
 {
   "name": "blurly",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "release:macos:app": "pnpm tauri build --bundles app",
+    "release:macos:dmg": "./scripts/package-macos-dmg.sh",
+    "release:macos:standalone": "./scripts/package-macos-standalone.sh",
+    "release:macos:validate": "./scripts/validate-macos-release.sh",
+    "release:macos:validate:standalone": "./scripts/validate-macos-standalone.sh",
+    "signing:dev": "./scripts/sign-dev.sh",
+    "signing:check": "codesign -dvv src-tauri/target/release/bundle/macos/Blurly.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Identifier|CDHash)='",
     "test": "vitest run",
     "test:watch": "vitest"
   },

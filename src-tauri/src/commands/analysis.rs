@@ -122,16 +122,22 @@ pub async fn run_analysis(
                     input_ctx,
                 ],
             )?;
-            Ok((id, settings.provider, settings.model, settings.web_search_enabled))
+            Ok((
+                id,
+                settings.provider,
+                settings.model,
+                settings.web_search_enabled,
+            ))
         })
         .await
         .map_err(|e| CommandError::Join(e.to_string()))??
     };
 
-    // 2. Read the key (separate spawn_blocking — keyring may block briefly).
+    // 2. Read the key (separate spawn_blocking — file I/O may block briefly).
     let key_result = {
         let provider_id = provider_id.clone();
-        tauri::async_runtime::spawn_blocking(move || read_key(&provider_id))
+        let data_dir = state.data_dir.clone();
+        tauri::async_runtime::spawn_blocking(move || read_key(&data_dir, &provider_id))
             .await
             .map_err(|e| CommandError::Join(e.to_string()))?
     };

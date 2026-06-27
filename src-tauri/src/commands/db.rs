@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -9,8 +9,11 @@ use crate::error::CommandError;
 
 /// Application state managed by Tauri.
 /// Wrapped in Arc so the inner Mutex can be cheaply cloned into spawn_blocking closures.
+/// `data_dir` is the OS-specific app-data directory and is the root for all
+/// per-user persistence (the SQLite DB and the encrypted secrets directory).
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
+    pub data_dir: PathBuf,
 }
 
 /// Open (or create) the SQLite database at `path`, run any pending migrations,
@@ -24,6 +27,7 @@ pub fn init_db(path: &Path) -> Result<Connection, CommandError> {
     let migrations = Migrations::new(vec![
         M::up(include_str!("../../migrations/001_init.sql")),
         M::up(include_str!("../../migrations/002_analyst.sql")),
+        M::up(include_str!("../../migrations/003_key_signing.sql")),
     ]);
 
     migrations.to_latest(&mut conn)?;

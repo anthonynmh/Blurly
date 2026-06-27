@@ -16,6 +16,7 @@ pub fn run() {
             let conn = commands::db::init_db(&dir.join("blurly.db"))?;
             app.manage(commands::db::AppState {
                 db: Arc::new(Mutex::new(conn)),
+                data_dir: dir,
             });
             Ok(())
         })
@@ -41,8 +42,10 @@ pub fn run() {
             commands::ai_settings::update_ai_settings,
             commands::ai_keys::set_api_key,
             commands::ai_keys::delete_api_key,
+            commands::ai_keys::get_api_key_status,
             commands::ai_keys::has_api_key,
             commands::ai_keys::test_api_key,
+            commands::signing::get_app_signing_identity,
             commands::analysis::list_analysis_runs,
             commands::analysis::get_analysis_run,
             commands::analysis::delete_analysis_run,
