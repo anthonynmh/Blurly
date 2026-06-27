@@ -1,3 +1,4 @@
+mod ai;
 mod commands;
 mod error;
 mod models;
@@ -32,6 +33,20 @@ pub fn run() {
             commands::snapshots::delete_snapshot,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::watchlist::list_watchlist,
+            commands::watchlist::create_watchlist_item,
+            commands::watchlist::update_watchlist_item,
+            commands::watchlist::delete_watchlist_item,
+            commands::ai_settings::get_ai_settings,
+            commands::ai_settings::update_ai_settings,
+            commands::ai_keys::set_api_key,
+            commands::ai_keys::delete_api_key,
+            commands::ai_keys::has_api_key,
+            commands::ai_keys::test_api_key,
+            commands::analysis::list_analysis_runs,
+            commands::analysis::get_analysis_run,
+            commands::analysis::delete_analysis_run,
+            commands::analysis::run_analysis,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
