@@ -24,6 +24,7 @@ pub fn init_db(path: &Path) -> Result<Connection, CommandError> {
     let migrations = Migrations::new(vec![
         M::up(include_str!("../../migrations/001_init.sql")),
         M::up(include_str!("../../migrations/002_analyst.sql")),
+        M::up(include_str!("../../migrations/003_key_signing.sql")),
     ]);
 
     migrations.to_latest(&mut conn)?;

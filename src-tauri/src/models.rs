@@ -178,6 +178,10 @@ pub struct AiSettings {
     pub key_ref: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// CDHash of the signing identity active when the key was last saved.
+    pub key_signing_cdhash: Option<String>,
+    /// Authority string of the signing identity active when the key was last saved.
+    pub key_signing_authority: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -124,6 +124,10 @@ export interface AiSettings {
   keyRef?: string;
   createdAt: string;
   updatedAt: string;
+  /** CDHash of the signing identity active when the key was last saved. */
+  keySigningCdhash?: string;
+  /** Authority string of the signing identity active when the key was last saved. */
+  keySigningAuthority?: string;
 }
 
 export interface UpdateAiSettings {
@@ -133,6 +137,15 @@ export interface UpdateAiSettings {
   includeExactValues?: boolean;
   includeQuantities?: boolean;
   includeNotes?: boolean;
+}
+
+export type ApiKeyPresenceStatus = 'saved' | 'missing' | 'stale' | 'error';
+
+export interface ApiKeyStatus {
+  provider: string;
+  keyRef?: string;
+  status: ApiKeyPresenceStatus;
+  message?: string;
 }
 
 export interface TestConnectionResult {

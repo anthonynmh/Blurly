@@ -18,12 +18,15 @@ fn row_to_ai_settings(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiSettings> {
         key_ref: row.get(6)?,
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
+        key_signing_cdhash: row.get(9)?,
+        key_signing_authority: row.get(10)?,
     })
 }
 
 const SELECT_COLS: &str =
     "SELECT provider, model, web_search_enabled, include_exact_values, include_quantities, \
-            include_notes, key_ref, created_at, updated_at \
+            include_notes, key_ref, created_at, updated_at, \
+            key_signing_cdhash, key_signing_authority \
      FROM ai_settings WHERE id = 1";
 
 /// Synchronous lookup used by other commands that already hold the lock.
@@ -93,11 +96,20 @@ pub async fn update_ai_settings(
     .map_err(|e| CommandError::Join(e.to_string()))?
 }
 
-/// Internal helper — set the key_ref for a provider after we successfully store the key.
-pub fn set_key_ref(conn: &Connection, key_ref: Option<&str>) -> Result<(), CommandError> {
+/// Internal helper — set the key_ref and optional signing identity columns after a
+/// successful key write. Pass `None` for signing args when clearing the key.
+pub fn set_key_ref(
+    conn: &Connection,
+    key_ref: Option<&str>,
+    signing_cdhash: Option<&str>,
+    signing_authority: Option<&str>,
+) -> Result<(), CommandError> {
     conn.execute(
-        "UPDATE ai_settings SET key_ref = ?1, updated_at = datetime('now') WHERE id = 1",
-        params![key_ref],
+        "UPDATE ai_settings \
+         SET key_ref = ?1, key_signing_cdhash = ?2, key_signing_authority = ?3, \
+             updated_at = datetime('now') \
+         WHERE id = 1",
+        params![key_ref, signing_cdhash, signing_authority],
     )?;
     Ok(())
 }

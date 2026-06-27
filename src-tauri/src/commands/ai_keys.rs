@@ -133,7 +133,7 @@ pub async fn set_api_key(
         if let Err(e) = entry.set_password(&key) {
             eprintln!("[blurly] set_password failed for provider={provider}: {e}");
             let conn = db.lock();
-            set_key_ref(&conn, None)?;
+            set_key_ref(&conn, None, None, None)?;
             return Err(CommandError::Keyring(format!(
                 "macOS Keychain refused the write ({e}). \
                  If this app is ad-hoc signed (Gatekeeper bypassed), open Keychain Access \
@@ -146,12 +146,12 @@ pub async fn set_api_key(
         );
         if let Err(e) = verify_saved_key(&provider, &key) {
             let conn = db.lock();
-            set_key_ref(&conn, None)?;
+            set_key_ref(&conn, None, None, None)?;
             return Err(e);
         }
 
         let conn = db.lock();
-        set_key_ref(&conn, Some(&provider))?;
+        set_key_ref(&conn, Some(&provider), None, None)?;
         Ok(resolved_status(provider.clone(), Some(provider), "saved", None))
     })
     .await
@@ -169,7 +169,7 @@ pub async fn delete_api_key(
         // keyring v3: delete_credential. Missing entry is not an error from the user's POV.
         let _ = entry.delete_credential();
         let conn = db.lock();
-        set_key_ref(&conn, None)?;
+        set_key_ref(&conn, None, None, None)?;
         Ok(())
     })
     .await
