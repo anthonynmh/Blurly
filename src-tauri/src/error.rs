@@ -17,8 +17,8 @@ pub enum CommandError {
     #[error("Task join error: {0}")]
     Join(String),
 
-    #[error("Keychain error: {0}")]
-    Keyring(String),
+    #[error("Storage error: {0}")]
+    Storage(String),
 }
 
 // Tauri commands require the error type to be serializable

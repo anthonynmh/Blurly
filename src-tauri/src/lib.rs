@@ -16,6 +16,7 @@ pub fn run() {
             let conn = commands::db::init_db(&dir.join("blurly.db"))?;
             app.manage(commands::db::AppState {
                 db: Arc::new(Mutex::new(conn)),
+                data_dir: dir,
             });
             Ok(())
         })

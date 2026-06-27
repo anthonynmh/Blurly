@@ -3,6 +3,7 @@ pub mod ai_settings;
 pub mod analysis;
 pub mod db;
 pub mod holdings;
+pub mod key_store;
 pub mod portfolio;
 pub mod settings;
 pub mod signing;

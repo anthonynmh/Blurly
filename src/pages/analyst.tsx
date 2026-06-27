@@ -293,19 +293,19 @@ function getAnalystKeyStatusMeta(status: ApiKeyStatus): {
       return {
         kind: 'saved',
         title: 'Saved key available',
-        description: 'Blurly can read the active provider key from Keychain.',
+        description: 'Blurly can decrypt the saved key for the active provider.',
       };
     case 'stale':
       return {
         kind: 'stale',
         title: 'Saved key needs to be re-added',
-        description: status.message ?? 'Blurly expected a saved key, but Keychain does not currently have a readable entry. Go to AI Settings, clear the stale entry, then save the key again.',
+        description: status.message ?? 'Blurly expected a saved key, but the encrypted secret file is missing. Go to AI Settings, clear the stale entry, then save the key again.',
       };
     case 'error':
       return {
         kind: 'error',
-        title: 'Keychain read failed',
-        description: status.message ?? 'Blurly could not read the saved key from Keychain.',
+        title: 'Saved key unreadable',
+        description: status.message ?? 'Blurly could not decrypt the saved key.',
       };
     case 'missing':
     default:

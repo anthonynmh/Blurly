@@ -2,8 +2,9 @@ import { invoke } from '@/lib/invoke';
 import type { ApiKeyStatus, SigningIdentity, TestConnectionResult } from '@/lib/types';
 
 /**
- * BYOK key storage. Keys live in the OS keychain (macOS Keychain via the
- * Rust `keyring` crate) — never in SQLite, never exposed back to JS.
+ * BYOK key storage. Keys live in an encrypted file under the app data
+ * directory (ChaCha20-Poly1305 with a machine-bound BLAKE3-derived key) —
+ * never in SQLite, never exposed back to JS.
  */
 export const aiKeysService = {
   set(provider: string, key: string): Promise<ApiKeyStatus> {

@@ -106,7 +106,7 @@ export default function AiSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">AI Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Bring your own API key. Keys are stored in your macOS Keychain — never in Blurly&apos;s database.
+          Bring your own API key. Keys are stored encrypted in Blurly&apos;s app data directory — never in the database, never sent anywhere except the provider.
         </p>
       </div>
 
@@ -275,7 +275,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
       void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
       void queryClient.invalidateQueries({ queryKey: statusQueryKey });
       keyForm.reset({ apiKey: '' });
-      toast.success('API key saved to Keychain');
+      toast.success('API key saved');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -321,14 +321,14 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
           )}
         </CardTitle>
         <CardDescription>
-          Keys are stored in macOS Keychain and only read when running analysis. They are never sent anywhere except the provider.
+          Keys are encrypted at rest with ChaCha20-Poly1305 (key derived per-machine) and only read when running analysis. They are never sent anywhere except the provider.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {keyStatusError && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Couldn&apos;t read keychain</AlertTitle>
+            <AlertTitle>Couldn&apos;t read saved key</AlertTitle>
             <AlertDescription>{(keyStatusError as Error).message}</AlertDescription>
           </Alert>
         )}
@@ -402,13 +402,13 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
                 disabled={deleteKey.isPending || disabled}
                 title={
                   hasSavedKey
-                    ? 'Remove the saved key from Keychain'
+                    ? 'Remove the saved key from disk'
                     : isStaleKey
-                      ? 'Clear the stale key reference and any orphaned Keychain entry'
-                      : 'Clear any orphaned com.blurly.app entry in Keychain'
+                      ? 'Clear the stale key reference'
+                      : 'Clear any orphaned secret file'
                 }
               >
-                <Trash2 className="h-4 w-4" /> {hasSavedKey ? 'Remove saved key' : isStaleKey ? 'Clear stale entry' : 'Clear keychain entry'}
+                <Trash2 className="h-4 w-4" /> {hasSavedKey ? 'Remove saved key' : isStaleKey ? 'Clear stale entry' : 'Clear saved key'}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -431,8 +431,8 @@ function getApiKeyStatusMeta(status: ApiKeyStatus): {
   switch (status.status) {
     case 'saved':
       return {
-        title: 'Saved in Keychain',
-        description: 'Blurly can read the active provider key from Keychain. Analyst is allowed to use it.',
+        title: 'Key saved',
+        description: 'Blurly can decrypt the saved key for the active provider. Analyst is allowed to use it.',
         badgeLabel: 'Saved',
         badgeVariant: 'secondary',
         containerClass: 'space-y-3 rounded-md border bg-muted/30 p-3',
@@ -440,15 +440,15 @@ function getApiKeyStatusMeta(status: ApiKeyStatus): {
     case 'stale':
       return {
         title: 'Saved-state mismatch',
-        description: status.message ?? 'Blurly expected a saved key, but Keychain does not currently have a readable entry.',
+        description: status.message ?? 'Blurly expected a saved key, but the encrypted secret file is missing.',
         badgeLabel: 'Stale',
         badgeVariant: 'outline',
         containerClass: 'space-y-3 rounded-md border border-dashed p-3',
       };
     case 'error':
       return {
-        title: 'Keychain read failed',
-        description: status.message ?? 'Blurly could not read the saved key from Keychain.',
+        title: 'Saved key unreadable',
+        description: status.message ?? 'Blurly could not decrypt the saved key. This usually means the machine identifier changed; clear and re-save.',
         badgeLabel: 'Error',
         badgeVariant: 'destructive',
         containerClass: 'space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-3',
