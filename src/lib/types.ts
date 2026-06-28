@@ -107,6 +107,14 @@ export interface Settings {
   portfolioName: string;
   baseCurrency: string;
   defaultCurrency: string;
+  /** USD↔SGD exchange rate: 1 USD = N SGD. Null when not yet set. */
+  fxUsdSgdRate?: number;
+  /** Date the FX rate was last set (YYYY-MM-DD). */
+  fxUsdSgdAsOf?: string;
+  /** Provenance: 'manual' (user-entered) or 'web_refresh' (future). */
+  fxUsdSgdSource?: string;
+  /** Days before a holding's price is flagged stale. Null → app default (7). */
+  stalenessThresholdDays?: number;
   createdAt: string;
   updatedAt: string;
 }

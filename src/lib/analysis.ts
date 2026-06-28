@@ -25,12 +25,19 @@ import {
  * Symbols, asset classes, portfolio weights, isStale, and daysSinceUpdate are
  * always included — they are metadata, not absolute values.
  */
+/**
+ * Builds the live in-memory context sent to the AI analyst.
+ *
+ * @param stalenessThresholdDays - Configurable stale threshold from Settings
+ *   (Settings.stalenessThresholdDays). Defaults to STALE_THRESHOLD_DAYS (7).
+ */
 export function buildAnalysisContext(
   holdings: Holding[],
   baseCurrency: string,
   privacy: PrivacyFlags,
+  stalenessThresholdDays?: number,
 ): AnalysisPortfolioContext {
-  const withValues = computeHoldingsWithValues(holdings, baseCurrency);
+  const withValues = computeHoldingsWithValues(holdings, baseCurrency, stalenessThresholdDays);
   const baseHoldings = withValues.filter((h) => h.currency === baseCurrency);
   const totalPortfolioValue = baseHoldings.reduce((sum, h) => sum + h.marketValue, 0);
   const cashAndMoneyMarketValue = baseHoldings
@@ -38,7 +45,7 @@ export function buildAnalysisContext(
     .reduce((sum, h) => sum + h.marketValue, 0);
 
   // Summary for P/L aggregates and staleness counts.
-  const summary = computePortfolioSummary(holdings, baseCurrency);
+  const summary = computePortfolioSummary(holdings, baseCurrency, stalenessThresholdDays);
 
   // Oldest as-of date across all holdings (empty portfolio falls back to today).
   const oldestAsOfDate =

@@ -85,10 +85,15 @@ export function isStale(
  *
  * Cash / MoneyMarket and zero-quantity holdings are excluded from staleness
  * (isStale = false) since their price does not need refreshing.
+ *
+ * @param stalenessThresholdDays - Override the default 7-day stale threshold
+ *   (sourced from the user's Settings.stalenessThresholdDays). Defaults to
+ *   STALE_THRESHOLD_DAYS when not provided.
  */
 export function computeHoldingsWithValues(
   holdings: Holding[],
   baseCurrency: string,
+  stalenessThresholdDays: number = STALE_THRESHOLD_DAYS,
 ): HoldingWithComputedValues[] {
   const baseTotal = holdings
     .filter((h) => h.currency === baseCurrency)
@@ -104,7 +109,7 @@ export function computeHoldingsWithValues(
     const days = daysSince(h.asOfDate);
     const isCashLike = h.assetClass === 'Cash' || h.assetClass === 'MoneyMarket';
     const isClosed = h.quantity === 0;
-    const stale = !isCashLike && !isClosed && isStale(h.asOfDate);
+    const stale = !isCashLike && !isClosed && isStale(h.asOfDate, stalenessThresholdDays);
     return {
       ...h,
       marketValue,
@@ -164,11 +169,16 @@ export function topHoldingsByValue(
 // Portfolio summary (for Dashboard)
 // ---------------------------------------------------------------------------
 
+/**
+ * @param stalenessThresholdDays - Override the default 7-day stale threshold.
+ *   Sourced from Settings.stalenessThresholdDays. Defaults to STALE_THRESHOLD_DAYS.
+ */
 export function computePortfolioSummary(
   holdings: Holding[],
   baseCurrency: string,
+  stalenessThresholdDays: number = STALE_THRESHOLD_DAYS,
 ): PortfolioSummary {
-  const withValues = computeHoldingsWithValues(holdings, baseCurrency);
+  const withValues = computeHoldingsWithValues(holdings, baseCurrency, stalenessThresholdDays);
   const baseHoldings = withValues.filter((h) => h.currency === baseCurrency);
 
   // Per-currency totals
@@ -225,6 +235,144 @@ export function computePortfolioSummary(
     totalUnrealizedPLPercent,
     staleHoldingsCount,
     missingCostBasisCount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Display-layer FX converter
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a PortfolioSummary from its original base currency into a chosen
+ * display currency by re-aggregating each holding's values at the given FX rate.
+ *
+ * - Holdings in currencies other than USD or SGD are excluded from the converted
+ *   aggregates (no such holdings should exist post Phase 1, but defended against).
+ * - Rate semantics: `{ 'USD->SGD': 1.35 }` means 1 USD = 1.35 SGD.
+ *   SGD→USD conversion uses `1 / rate`.
+ * - If the required FX rate is missing (undefined or 0), the original summary is
+ *   returned unchanged.
+ * - Holdings with quantity 0 contribute 0 to all aggregates.
+ * - Holdings with null costBasis are excluded from totalCostBasis.
+ *
+ * This is a pure function with no Tauri dependency — fully unit-testable.
+ */
+export function convertSummaryToDisplayCurrency(
+  summary: PortfolioSummary,
+  holdings: Holding[],
+  displayCcy: 'USD' | 'SGD',
+  fxRates: { 'USD->SGD'?: number },
+): PortfolioSummary {
+  const usdSgdRate = fxRates['USD->SGD'];
+
+  // If the rate is missing or zero, return the original summary unchanged.
+  if (!usdSgdRate) return summary;
+
+  /** Returns the multiplier to convert a value in `ccy` into `displayCcy`. */
+  function convRate(ccy: string): number | null {
+    if (ccy === displayCcy) return 1;
+    if (ccy === 'USD' && displayCcy === 'SGD') return usdSgdRate!;
+    if (ccy === 'SGD' && displayCcy === 'USD') return 1 / usdSgdRate!;
+    return null; // non-USD/SGD: excluded from aggregate
+  }
+
+  // Compute converted values per holding.
+  type ConvItem = {
+    h: Holding;
+    convertedMV: number;
+    convertedCostBasis: number | null;
+    convertedPL: number | null;
+  };
+
+  let totalConvertedMV = 0;
+  const items: ConvItem[] = [];
+
+  for (const h of holdings) {
+    const r = convRate(h.currency);
+    if (r === null) continue; // skip non-USD/SGD
+
+    const mv = h.quantity * h.currentPrice; // pre-conversion market value
+    const convertedMV = mv * r;
+    totalConvertedMV += convertedMV;
+
+    const costBasis = h.averagePrice != null ? h.quantity * h.averagePrice : null;
+    const convertedCostBasis = costBasis != null ? costBasis * r : null;
+    const pl = costBasis != null ? mv - costBasis : null;
+    const convertedPL = pl != null ? pl * r : null;
+
+    items.push({ h, convertedMV, convertedCostBasis, convertedPL });
+  }
+
+  // Aggregate P/L and cash totals in displayCcy.
+  let totalCostBasis = 0;
+  let totalUnrealizedPL = 0;
+  let cashAndMoneyMarketValue = 0;
+
+  for (const item of items) {
+    const isCashLike =
+      item.h.assetClass === 'Cash' || item.h.assetClass === 'MoneyMarket';
+    if (isCashLike) {
+      cashAndMoneyMarketValue += item.convertedMV;
+    } else if (item.convertedCostBasis != null) {
+      totalCostBasis += item.convertedCostBasis;
+      totalUnrealizedPL += item.convertedPL ?? 0;
+    }
+  }
+
+  const totalUnrealizedPLPercent =
+    totalCostBasis > 0 ? totalUnrealizedPL / totalCostBasis : null;
+
+  // Build converted HoldingWithComputedValues for largestHolding / topHoldings.
+  // currency is set to displayCcy so downstream formatters use the correct symbol.
+  // daysSinceUpdate / isStale are recomputed from raw data using default threshold;
+  // they're display-only here and do not feed the summary's staleHoldingsCount.
+  const convertedHWV: HoldingWithComputedValues[] = items.map((item) => {
+    const convertedCostBasis = item.convertedCostBasis;
+    const convertedPL = item.convertedPL;
+    const convertedPLPercent =
+      convertedCostBasis != null && convertedCostBasis !== 0
+        ? (convertedPL ?? 0) / convertedCostBasis
+        : null;
+    return {
+      ...item.h,
+      currency: displayCcy,
+      marketValue: item.convertedMV,
+      weight: totalConvertedMV > 0 ? item.convertedMV / totalConvertedMV : 0,
+      costBasis: convertedCostBasis,
+      unrealizedPL: convertedPL,
+      unrealizedPLPercent: convertedPLPercent,
+      daysSinceUpdate: daysSince(item.h.asOfDate),
+      isStale: isStale(item.h.asOfDate),
+    };
+  });
+
+  const sortedByMV = [...convertedHWV].sort((a, b) => b.marketValue - a.marketValue);
+  const largestHolding = sortedByMV[0];
+  const topHoldings = sortedByMV.slice(0, 5);
+
+  // Recompute asset-class breakdown from converted values.
+  const groups: Record<string, number> = {};
+  for (const hwv of convertedHWV) {
+    groups[hwv.assetClass] = (groups[hwv.assetClass] ?? 0) + hwv.marketValue;
+  }
+  const assetClassBreakdown: Breakdown[] = Object.entries(groups)
+    .map(([key, value]) => ({
+      key,
+      value,
+      weight: totalConvertedMV > 0 ? value / totalConvertedMV : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    ...summary,
+    baseCurrencyTotal: totalConvertedMV,
+    totalCostBasis,
+    totalUnrealizedPL,
+    totalUnrealizedPLPercent,
+    cashAndMoneyMarketValue,
+    largestHolding,
+    topHoldings,
+    assetClassBreakdown,
   };
 }
 
