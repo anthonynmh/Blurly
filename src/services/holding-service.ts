@@ -1,5 +1,5 @@
 import { invoke } from '@/lib/invoke';
-import type { Holding, NewHolding, UpdateHolding } from '@/lib/types';
+import type { BulkPriceUpdate, Holding, NewHolding, UpdateHolding } from '@/lib/types';
 
 export const holdingService = {
   list(portfolioId: string): Promise<Holding[]> {
@@ -20,5 +20,9 @@ export const holdingService = {
 
   delete(id: string): Promise<void> {
     return invoke('delete_holding', { id });
+  },
+
+  updatePricesBulk(updates: BulkPriceUpdate[]): Promise<void> {
+    return invoke('update_prices_bulk', { updates });
   },
 };
