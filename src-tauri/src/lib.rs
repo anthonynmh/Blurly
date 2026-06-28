@@ -26,6 +26,7 @@ pub fn run() {
             commands::holdings::create_holding,
             commands::holdings::update_holding,
             commands::holdings::delete_holding,
+            commands::holdings::update_prices_bulk,
             commands::portfolio::get_default_portfolio,
             commands::portfolio::get_portfolio,
             commands::snapshots::create_snapshot,

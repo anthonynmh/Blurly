@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::commands::db::AppState;
 use crate::error::CommandError;
-use crate::models::{Holding, NewHolding, UpdateHolding};
+use crate::models::{BulkPriceUpdate, Holding, NewHolding, UpdateHolding};
 
 fn row_to_holding(row: &rusqlite::Row<'_>) -> rusqlite::Result<Holding> {
     Ok(Holding {
@@ -26,6 +26,7 @@ fn row_to_holding(row: &rusqlite::Row<'_>) -> rusqlite::Result<Holding> {
         notes: row.get(13)?,
         created_at: row.get(14)?,
         updated_at: row.get(15)?,
+        price_updated_at: row.get(16)?,
     })
 }
 
@@ -51,7 +52,7 @@ pub async fn list_holdings(
             &conn,
             "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
                     current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at
+                    created_at, updated_at, price_updated_at
              FROM holdings
              WHERE portfolio_id = ?1
              ORDER BY created_at ASC",
@@ -73,7 +74,7 @@ pub async fn get_holding(
         let mut stmt = conn.prepare(
             "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
                     current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at
+                    created_at, updated_at, price_updated_at
              FROM holdings WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], row_to_holding)?;
@@ -98,8 +99,8 @@ pub async fn create_holding(
         conn.execute(
             "INSERT INTO holdings (id, portfolio_id, symbol, name, asset_class, quantity,
                 average_price, current_price, currency, sector, region, broker,
-                as_of_date, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                as_of_date, notes, price_updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'))",
             params![
                 id,
                 input.portfolio_id,
@@ -120,7 +121,7 @@ pub async fn create_holding(
         let holding = conn.query_row(
             "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
                     current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at
+                    created_at, updated_at, price_updated_at
              FROM holdings WHERE id = ?1",
             params![id],
             row_to_holding,
@@ -145,11 +146,16 @@ pub async fn update_holding(
         let existing = conn.query_row(
             "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
                     current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at
+                    created_at, updated_at, price_updated_at
              FROM holdings WHERE id = ?1",
             params![id],
             row_to_holding,
         ).map_err(|_| CommandError::NotFound(format!("holding {id}")))?;
+
+        // Determine if price-related fields changed BEFORE consuming them.
+        let price_changed = input.current_price.map(|p| p != existing.current_price).unwrap_or(false);
+        let date_changed = input.as_of_date.as_deref().map(|d| d != existing.as_of_date).unwrap_or(false);
+        let refresh_price_ts = price_changed || date_changed;
 
         let symbol = input.symbol.unwrap_or(existing.symbol);
         let name = input.name.or(existing.name);
@@ -173,20 +179,21 @@ pub async fn update_holding(
                 symbol = ?1, name = ?2, asset_class = ?3, quantity = ?4,
                 average_price = ?5, current_price = ?6, currency = ?7,
                 sector = ?8, region = ?9, broker = ?10, as_of_date = ?11,
-                notes = ?12, updated_at = datetime('now')
-             WHERE id = ?13",
+                notes = ?12, updated_at = datetime('now'),
+                price_updated_at = CASE WHEN ?13 THEN datetime('now') ELSE price_updated_at END
+             WHERE id = ?14",
             params![
                 symbol, name, asset_class, quantity,
                 average_price, current_price, currency,
                 sector, region, broker, as_of_date,
-                notes, id,
+                notes, refresh_price_ts, id,
             ],
         )?;
 
         let updated = conn.query_row(
             "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
                     current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at
+                    created_at, updated_at, price_updated_at
              FROM holdings WHERE id = ?1",
             params![id],
             row_to_holding,
@@ -209,6 +216,35 @@ pub async fn delete_holding(
         if affected == 0 {
             return Err(CommandError::NotFound(format!("holding {id}")));
         }
+        Ok(())
+    })
+    .await
+    .map_err(|e| CommandError::Join(e.to_string()))?
+}
+
+/// Bulk-update current prices and as-of dates for multiple holdings in one
+/// atomic transaction. Called by the UpdatePricesDialog to commit all edits at once.
+#[tauri::command]
+pub async fn update_prices_bulk(
+    state: tauri::State<'_, AppState>,
+    updates: Vec<BulkPriceUpdate>,
+) -> Result<(), CommandError> {
+    let db = Arc::clone(&state.db);
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = db.lock();
+        let tx = conn.transaction()?;
+        for u in &updates {
+            tx.execute(
+                "UPDATE holdings SET
+                    current_price = ?1,
+                    as_of_date = ?2,
+                    price_updated_at = datetime('now'),
+                    updated_at = datetime('now')
+                 WHERE id = ?3",
+                params![u.current_price, u.as_of_date, u.id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     })
     .await
