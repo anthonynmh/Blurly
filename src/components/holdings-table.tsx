@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, MoreHorizontal, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -34,21 +34,35 @@ import type { HoldingWithComputedValues } from '@/lib/types';
 import { formatCurrency, formatPercent } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 
-type SortKey = 'symbol' | 'assetClass' | 'marketValue' | 'weight' | 'currency';
+type SortKey =
+  | 'symbol'
+  | 'assetClass'
+  | 'marketValue'
+  | 'weight'
+  | 'currency'
+  | 'costBasis'
+  | 'unrealizedPL'
+  | 'unrealizedPLPercent'
+  | 'daysSinceUpdate';
+
 type SortDir = 'asc' | 'desc';
 
 interface HoldingsTableProps {
   holdings: HoldingWithComputedValues[];
   baseCurrency: string;
   portfolioId: string;
+  /** Called when the user clicks "Update price" on a row. The parent hoists the dialog. */
+  onUpdatePrice?: (holding: HoldingWithComputedValues) => void;
 }
 
-export function HoldingsTable({ holdings, baseCurrency, portfolioId }: HoldingsTableProps) {
+export function HoldingsTable({ holdings, baseCurrency, portfolioId, onUpdatePrice }: HoldingsTableProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [sortKey, setSortKey] = useState<SortKey>('marketValue');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  /** When true, only show holdings where daysSinceUpdate <= 7 */
+  const [showRecentOnly, setShowRecentOnly] = useState(false);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => holdingService.delete(id),
@@ -71,7 +85,10 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId }: HoldingsT
     }
   }
 
-  const sorted = [...holdings].sort((a, b) => {
+  // Apply "recently updated" filter before sorting.
+  const filtered = showRecentOnly ? holdings.filter((h) => h.daysSinceUpdate <= 7) : holdings;
+
+  const sorted = [...filtered].sort((a, b) => {
     let cmp = 0;
     switch (sortKey) {
       case 'symbol':
@@ -88,6 +105,18 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId }: HoldingsT
         break;
       case 'currency':
         cmp = a.currency.localeCompare(b.currency);
+        break;
+      case 'costBasis':
+        cmp = (a.costBasis ?? -Infinity) - (b.costBasis ?? -Infinity);
+        break;
+      case 'unrealizedPL':
+        cmp = (a.unrealizedPL ?? -Infinity) - (b.unrealizedPL ?? -Infinity);
+        break;
+      case 'unrealizedPLPercent':
+        cmp = (a.unrealizedPLPercent ?? -Infinity) - (b.unrealizedPLPercent ?? -Infinity);
+        break;
+      case 'daysSinceUpdate':
+        cmp = a.daysSinceUpdate - b.daysSinceUpdate;
         break;
     }
     return sortDir === 'asc' ? cmp : -cmp;
@@ -108,20 +137,37 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId }: HoldingsT
   return (
     <TooltipProvider>
       <>
+        {/* Controls row: filter chip */}
+        <div className="mb-2 flex items-center gap-2">
+          <Button
+            variant={showRecentOnly ? 'secondary' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowRecentOnly((v) => !v)}
+          >
+            Recently updated
+          </Button>
+          {showRecentOnly && (
+            <span className="text-xs text-muted-foreground">
+              Showing {sorted.length} holding{sorted.length !== 1 ? 's' : ''} updated in the last 7 days
+            </span>
+          )}
+        </div>
+
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead><SortHeader k="symbol">Symbol</SortHeader></TableHead>
               <TableHead><SortHeader k="assetClass">Class</SortHeader></TableHead>
               <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Avg Cost</TableHead>
+              <TableHead className="text-right"><SortHeader k="costBasis">Avg Cost</SortHeader></TableHead>
               <TableHead className="text-right">Price</TableHead>
               <TableHead className="text-right"><SortHeader k="marketValue">Value</SortHeader></TableHead>
-              <TableHead className="text-right">Unreal. P/L</TableHead>
-              <TableHead className="text-right">P/L %</TableHead>
+              <TableHead className="text-right"><SortHeader k="unrealizedPL">Unreal. P/L</SortHeader></TableHead>
+              <TableHead className="text-right"><SortHeader k="unrealizedPLPercent">P/L %</SortHeader></TableHead>
               <TableHead className="text-right"><SortHeader k="weight">Weight</SortHeader></TableHead>
               <TableHead><SortHeader k="currency">CCY</SortHeader></TableHead>
-              <TableHead>Updated</TableHead>
+              <TableHead><SortHeader k="daysSinceUpdate">Updated</SortHeader></TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
@@ -201,6 +247,12 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId }: HoldingsT
                           <Pencil className="h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
+                        {onUpdatePrice && (
+                          <DropdownMenuItem onClick={() => onUpdatePrice(h)}>
+                            <RefreshCw className="h-4 w-4" />
+                            Update price
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
