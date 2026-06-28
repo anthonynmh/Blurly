@@ -34,12 +34,9 @@ const holdingSchema = z.object({
   name: z.string().optional(),
   assetClass: z.enum(ASSET_CLASSES),
   quantity: z.coerce.number().min(0, 'Quantity must be ≥ 0'),
-  averagePrice: z.preprocess(
-    (v) => (v === '' || v === null || v === undefined ? undefined : Number(v)),
-    z.number().min(0).optional(),
-  ),
+  averagePrice: z.coerce.number().min(0, 'Average cost must be ≥ 0'),
   currentPrice: z.coerce.number().min(0, 'Current price must be ≥ 0'),
-  currency: z.string().min(3).max(3).toUpperCase(),
+  currency: z.enum(CURRENCY_OPTIONS),
   sector: z.string().optional(),
   region: z.string().optional(),
   broker: z.string().optional(),
@@ -69,7 +66,7 @@ export function HoldingForm({
       name: '',
       assetClass: 'Stock',
       quantity: 0,
-      averagePrice: undefined,
+      averagePrice: 0,
       currentPrice: 0,
       currency: 'USD',
       sector: '',
@@ -84,7 +81,6 @@ export function HoldingForm({
   // Open the optional section by default when there's existing optional data (edit case).
   const hasOptional =
     !!defaultValues?.name ||
-    defaultValues?.averagePrice !== undefined ||
     !!defaultValues?.sector ||
     !!defaultValues?.region ||
     !!defaultValues?.broker ||
@@ -98,12 +94,6 @@ export function HoldingForm({
     Number.isFinite(Number(watchQty)) && Number.isFinite(Number(watchPrice))
       ? Number(watchQty) * Number(watchPrice)
       : 0;
-
-  // Surface this currency even if it isn't in CURRENCY_OPTIONS so existing
-  // holdings with EUR/etc still display correctly in edit mode.
-  const currencyOptions: readonly string[] = CURRENCY_OPTIONS.includes(watchCurrency as 'USD' | 'SGD')
-    ? CURRENCY_OPTIONS
-    : [...CURRENCY_OPTIONS, watchCurrency];
 
   return (
     <Form {...form}>
@@ -156,16 +146,19 @@ export function HoldingForm({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="quantity"
+                name="averagePrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Quantity *</FormLabel>
+                    <FormLabel>Average cost *</FormLabel>
                     <FormControl>
-                      <Input type="number" step="any" min="0" placeholder="10" {...field} />
+                      <Input type="number" step="any" min="0" placeholder="150.00" {...field} />
                     </FormControl>
+                    <FormDescription>
+                      Your average price per share. Used to compute unrealized P/L.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -178,6 +171,22 @@ export function HoldingForm({
                     <FormLabel>Current price *</FormLabel>
                     <FormControl>
                       <Input type="number" step="any" min="0" placeholder="175.00" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="quantity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quantity *</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="any" min="0" placeholder="10" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -196,7 +205,7 @@ export function HoldingForm({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {currencyOptions.map((c) => (
+                        {CURRENCY_OPTIONS.map((c) => (
                           <SelectItem key={c} value={c}>
                             {c}
                           </SelectItem>
@@ -207,9 +216,6 @@ export function HoldingForm({
                   </FormItem>
                 )}
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="asOfDate"
@@ -223,14 +229,15 @@ export function HoldingForm({
                   </FormItem>
                 )}
               />
-              <FormItem>
-                <FormLabel>Market value</FormLabel>
-                <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm tabular-nums">
-                  {formatCurrency(marketValue, watchCurrency || 'USD')}
-                </div>
-                <FormDescription>quantity × current price</FormDescription>
-              </FormItem>
             </div>
+
+            <FormItem>
+              <FormLabel>Market value</FormLabel>
+              <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm tabular-nums">
+                {formatCurrency(marketValue, watchCurrency || 'USD')}
+              </div>
+              <FormDescription>quantity × current price</FormDescription>
+            </FormItem>
           </div>
 
           {/* Optional details — collapsible */}
@@ -245,34 +252,19 @@ export function HoldingForm({
             </button>
             {optionalOpen && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Apple Inc." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="averagePrice"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Average cost</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="any" min="0" placeholder="150.00" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Apple Inc." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <div className="grid grid-cols-3 gap-4">
                   <FormField
@@ -351,9 +343,12 @@ export function holdingToFormValues(h: Holding): HoldingFormValues {
     name: h.name ?? '',
     assetClass: h.assetClass,
     quantity: h.quantity,
-    averagePrice: h.averagePrice,
+    averagePrice: h.averagePrice ?? 0,
     currentPrice: h.currentPrice,
-    currency: h.currency,
+    // Fall back to USD if the stored currency isn't in our supported set.
+    currency: (['USD', 'SGD'] as string[]).includes(h.currency)
+      ? (h.currency as 'USD' | 'SGD')
+      : 'USD',
     sector: h.sector ?? '',
     region: h.region ?? '',
     broker: h.broker ?? '',
