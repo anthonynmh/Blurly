@@ -45,6 +45,7 @@ interface UpdatePricesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   holdings: HoldingWithComputedValues[];
+  initialHoldingId?: string | null;
 }
 
 const TODAY = todayIso();
@@ -63,6 +64,7 @@ export function UpdatePricesDialog({
   open,
   onOpenChange,
   holdings,
+  initialHoldingId,
 }: UpdatePricesDialogProps) {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<RowState[]>([]);
@@ -96,6 +98,10 @@ export function UpdatePricesDialog({
   }, [open]);
 
   const sorted = [...rows].sort((a, b) => {
+    if (initialHoldingId) {
+      if (a.id === initialHoldingId) return -1;
+      if (b.id === initialHoldingId) return 1;
+    }
     if (sortMode === 'alpha') return a.symbol.localeCompare(b.symbol);
     // staleness desc: most stale first
     return b.daysSinceUpdate - a.daysSinceUpdate;

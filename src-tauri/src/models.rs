@@ -120,6 +120,15 @@ pub struct Settings {
     pub portfolio_name: String,
     pub base_currency: String,
     pub default_currency: String,
+    /// USD↔SGD exchange rate: 1 USD = N SGD. Null when not yet set.
+    pub fx_usd_sgd_rate: Option<f64>,
+    /// Date the FX rate was last set (YYYY-MM-DD).
+    pub fx_usd_sgd_as_of: Option<String>,
+    /// Provenance of the FX rate: 'manual' (user-entered) or 'web_refresh' (future).
+    pub fx_usd_sgd_source: Option<String>,
+    /// Number of calendar days before a holding's price is flagged as stale.
+    /// Null means use the application default of 7 days.
+    pub staleness_threshold_days: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -130,6 +139,13 @@ pub struct UpdateSettings {
     pub portfolio_name: Option<String>,
     pub base_currency: Option<String>,
     pub default_currency: Option<String>,
+    /// `None` means "leave unchanged"; `Some(None)` means "clear the stored value".
+    pub fx_usd_sgd_rate: Option<Option<f64>>,
+    /// `None` means "leave unchanged"; `Some(None)` means "clear the stored value".
+    pub fx_usd_sgd_as_of: Option<Option<String>>,
+    /// `None` means "leave unchanged"; `Some(None)` means "clear the stored value".
+    pub fx_usd_sgd_source: Option<Option<String>>,
+    pub staleness_threshold_days: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------

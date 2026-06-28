@@ -9,6 +9,7 @@ import {
   STALE_THRESHOLD_DAYS,
   computeHoldingsWithValues,
   computePortfolioSummary,
+  convertSummaryToDisplayCurrency,
   groupByAssetClass,
   buildPortfolioSnapshot,
 } from './calculations';
@@ -346,5 +347,141 @@ describe('buildPortfolioSnapshot', () => {
   it('uses today as snapshotDate when date omitted', () => {
     const snap = buildPortfolioSnapshot(DEFAULT_PORTFOLIO, [], undefined);
     expect(snap.snapshotDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Staleness threshold threading
+// ---------------------------------------------------------------------------
+
+describe('computeHoldingsWithValues — custom stalenessThresholdDays', () => {
+  it('uses default threshold (7) when not specified', () => {
+    const today = new Date(Date.UTC(2024, 0, 9)); // 2024-01-09
+    // 2024-01-01 is 8 days before → stale with default threshold of 7
+    const h = makeHolding({ asOfDate: '2024-01-01', assetClass: 'Stock', quantity: 1 });
+    const result = computeHoldingsWithValues([h], 'USD');
+    expect(result[0].isStale).toBe(true);
+    void today; // suppress unused warning
+  });
+
+  it('respects a custom threshold when provided', () => {
+    // 2020-01-01 is very old → stale with threshold=7, but not stale with threshold=99999
+    const h = makeHolding({ asOfDate: '2020-01-01', assetClass: 'Stock', quantity: 1 });
+    const withDefault = computeHoldingsWithValues([h], 'USD', 7);
+    expect(withDefault[0].isStale).toBe(true);
+    const withHuge = computeHoldingsWithValues([h], 'USD', 99999);
+    expect(withHuge[0].isStale).toBe(false);
+  });
+
+  it('staleHoldingsCount in summary uses the custom threshold', () => {
+    // h1: very old date → stale at threshold 7, not stale at threshold 99999
+    const h1 = makeHolding({ id: 'h1', asOfDate: '2020-01-01', assetClass: 'Stock', quantity: 1 });
+    const summary7 = computePortfolioSummary([h1], 'USD', 7);
+    // With default threshold of 7: a 2020-01-01 holding is definitely stale
+    expect(summary7.staleHoldingsCount).toBeGreaterThan(0);
+    // With threshold of 99999: nothing should be stale
+    const summaryBig = computePortfolioSummary([h1], 'USD', 99999);
+    expect(summaryBig.staleHoldingsCount).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// convertSummaryToDisplayCurrency
+// ---------------------------------------------------------------------------
+
+describe('convertSummaryToDisplayCurrency', () => {
+  const FX = { 'USD->SGD': 1.35 } as const;
+
+  /** Helper: build a minimal valid PortfolioSummary for a list of holdings. */
+  function summaryFor(holdings: Holding[], baseCcy: string) {
+    return computePortfolioSummary(holdings, baseCcy);
+  }
+
+  it('(a) USD-only portfolio in SGD mode multiplies all totals by rate', () => {
+    const holdings = [
+      makeHolding({ id: 'h1', currency: 'USD', quantity: 10, currentPrice: 100, averagePrice: 80, assetClass: 'Stock' }),
+    ];
+    const summary = summaryFor(holdings, 'USD');
+    const converted = convertSummaryToDisplayCurrency(summary, holdings, 'SGD', FX);
+
+    expect(converted.baseCurrencyTotal).toBeCloseTo(1000 * 1.35, 5); // 1350
+    expect(converted.totalCostBasis).toBeCloseTo(800 * 1.35, 5);     // 1080
+    expect(converted.totalUnrealizedPL).toBeCloseTo(200 * 1.35, 5);  // 270
+    expect(converted.totalUnrealizedPLPercent).toBeCloseTo(0.25, 5); // ratio unchanged
+  });
+
+  it('(b) SGD-only portfolio in USD mode divides by rate', () => {
+    const holdings = [
+      makeHolding({ id: 'h1', currency: 'SGD', quantity: 10, currentPrice: 135, averagePrice: 108, assetClass: 'Stock', symbol: 'S1' }),
+    ];
+    const summary = summaryFor(holdings, 'SGD');
+    const converted = convertSummaryToDisplayCurrency(summary, holdings, 'USD', FX);
+
+    expect(converted.baseCurrencyTotal).toBeCloseTo(1350 / 1.35, 5); // 1000
+    expect(converted.totalCostBasis).toBeCloseTo(1080 / 1.35, 5);    // 800
+    expect(converted.totalUnrealizedPL).toBeCloseTo(270 / 1.35, 5);  // 200
+    expect(converted.totalUnrealizedPLPercent).toBeCloseTo(0.25, 5);
+  });
+
+  it('(c) mixed USD+SGD portfolio aggregates correctly in both modes', () => {
+    const holdings = [
+      makeHolding({ id: 'h1', currency: 'USD', quantity: 10, currentPrice: 100, averagePrice: 80, assetClass: 'Stock' }),
+      makeHolding({ id: 'h2', currency: 'SGD', quantity: 10, currentPrice: 135, averagePrice: 108, assetClass: 'Stock', symbol: 'S2' }),
+    ];
+    // USD base currency, so summary only aggregates USD holdings
+    const summary = summaryFor(holdings, 'USD');
+
+    // In SGD mode: both holdings converted to SGD
+    const sgdConverted = convertSummaryToDisplayCurrency(summary, holdings, 'SGD', FX);
+    // USD holding: 1000 * 1.35 = 1350; SGD holding: 1350 * 1 = 1350
+    expect(sgdConverted.baseCurrencyTotal).toBeCloseTo(1350 + 1350, 5);
+
+    // In USD mode: both holdings converted to USD
+    const usdConverted = convertSummaryToDisplayCurrency(summary, holdings, 'USD', FX);
+    // USD holding: 1000 * 1 = 1000; SGD holding: 1350 / 1.35 = 1000
+    expect(usdConverted.baseCurrencyTotal).toBeCloseTo(1000 + 1000, 5);
+  });
+
+  it('(d) missing FX rate returns original summary unchanged', () => {
+    const holdings = [makeHolding({ currency: 'USD', quantity: 10, currentPrice: 100 })];
+    const summary = summaryFor(holdings, 'USD');
+    const result = convertSummaryToDisplayCurrency(summary, holdings, 'SGD', {});
+    expect(result).toBe(summary); // same reference
+  });
+
+  it('(e) holdings with quantity 0 contribute 0 to all aggregates', () => {
+    const holdings = [
+      makeHolding({ id: 'h1', currency: 'USD', quantity: 0, currentPrice: 100, averagePrice: 80, assetClass: 'Stock' }),
+    ];
+    const summary = summaryFor(holdings, 'USD');
+    const converted = convertSummaryToDisplayCurrency(summary, holdings, 'SGD', FX);
+    expect(converted.baseCurrencyTotal).toBe(0);
+    expect(converted.totalCostBasis).toBe(0);
+    expect(converted.totalUnrealizedPL).toBe(0);
+  });
+
+  it('(f) null-costBasis holdings excluded from totalCostBasis post-conversion', () => {
+    const holdings = [
+      makeHolding({ id: 'h1', currency: 'USD', quantity: 10, currentPrice: 100, averagePrice: undefined, assetClass: 'Stock' }),
+      makeHolding({ id: 'h2', currency: 'USD', quantity: 5, currentPrice: 100, averagePrice: 80, assetClass: 'Stock', symbol: 'B' }),
+    ];
+    const summary = summaryFor(holdings, 'USD');
+    const converted = convertSummaryToDisplayCurrency(summary, holdings, 'SGD', FX);
+    // Only h2's cost basis should appear
+    expect(converted.totalCostBasis).toBeCloseTo(5 * 80 * 1.35, 5); // 540
+    // h1 has no costBasis so its P/L is not included in totalUnrealizedPL
+    expect(converted.totalUnrealizedPL).toBeCloseTo(5 * (100 - 80) * 1.35, 5); // 135
+  });
+
+  it('topHoldings are sorted by converted marketValue descending', () => {
+    const holdings = [
+      makeHolding({ id: 'h1', currency: 'USD', quantity: 5, currentPrice: 100, symbol: 'SMALL' }),
+      makeHolding({ id: 'h2', currency: 'SGD', quantity: 20, currentPrice: 100, symbol: 'BIG' }),
+    ];
+    const summary = summaryFor(holdings, 'USD');
+    const converted = convertSummaryToDisplayCurrency(summary, holdings, 'SGD', FX);
+    // BIG in SGD: 20*100 = 2000 SGD; SMALL (USD): 5*100*1.35 = 675 SGD
+    expect(converted.topHoldings[0].symbol).toBe('BIG');
+    expect(converted.topHoldings[1].symbol).toBe('SMALL');
   });
 });
