@@ -215,10 +215,8 @@ export function UpdatePricesDialog({
                 <tbody>
                   {sorted.map((r) => {
                     const isInvalid = r.dirty && !rowIsValid(r);
-                    const asOf = new Date(
-                      // Use the ORIGINAL asOfDate from eligible holdings
-                      eligible.find((h) => h.id === r.id)?.asOfDate + 'T00:00:00Z' ?? '',
-                    );
+                    const origDate = eligible.find((h) => h.id === r.id)?.asOfDate ?? TODAY;
+                    const asOf = new Date(origDate + 'T00:00:00Z');
                     const relative = formatDistanceToNow(asOf, { addSuffix: true });
                     return (
                       <tr

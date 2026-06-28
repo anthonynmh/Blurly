@@ -95,9 +95,6 @@ export default function DashboardPage() {
     );
   }
 
-  const plColor =
-    summary.totalUnrealizedPL >= 0 ? 'text-green-600' : 'text-red-600';
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
