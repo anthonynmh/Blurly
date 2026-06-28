@@ -7,7 +7,6 @@ import HoldingsPage from '@/pages/holdings';
 import AddHoldingPage from '@/pages/add-holding';
 import EditHoldingPage from '@/pages/edit-holding';
 import SettingsPage from '@/pages/settings';
-import SnapshotsPage from '@/pages/snapshots';
 import AnalystPage from '@/pages/analyst';
 import AnalysisHistoryPage from '@/pages/analysis-history';
 import WatchlistPage from '@/pages/watchlist';
@@ -32,7 +31,6 @@ export default function App() {
             <Route path="holdings" element={<HoldingsPage />} />
             <Route path="holdings/add" element={<AddHoldingPage />} />
             <Route path="holdings/:id/edit" element={<EditHoldingPage />} />
-            <Route path="snapshots" element={<SnapshotsPage />} />
             <Route path="analyst" element={<AnalystPage />} />
             <Route path="analysis-history" element={<AnalysisHistoryPage />} />
             <Route path="analysis-history/:id" element={<AnalysisHistoryPage />} />

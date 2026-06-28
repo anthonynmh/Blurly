@@ -37,6 +37,16 @@ pub struct Holding {
     pub notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub price_updated_at: Option<String>,
+}
+
+/// Input for bulk price updates from the UpdatePricesDialog.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BulkPriceUpdate {
+    pub id: String,
+    pub current_price: f64,
+    pub as_of_date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

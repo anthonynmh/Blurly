@@ -32,6 +32,8 @@ export interface Holding {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+  /** ISO-8601 timestamp set whenever current_price or as_of_date changes. */
+  priceUpdatedAt?: string;
 }
 
 export type NewHolding = Omit<Holding, 'id' | 'createdAt' | 'updatedAt'>;
@@ -42,6 +44,16 @@ export interface HoldingWithComputedValues extends Holding {
   marketValue: number;
   /** 0..1, within the base-currency cohort only */
   weight: number;
+  /** quantity × averagePrice, or null when averagePrice is absent */
+  costBasis: number | null;
+  /** marketValue − costBasis, or null when costBasis is null */
+  unrealizedPL: number | null;
+  /** (marketValue − costBasis) / costBasis, or null when costBasis is null or 0 */
+  unrealizedPLPercent: number | null;
+  /** Calendar days since asOfDate, computed in UTC */
+  daysSinceUpdate: number;
+  /** true when daysSinceUpdate > STALE_THRESHOLD_DAYS and not Cash/MoneyMarket/zero-qty */
+  isStale: boolean;
 }
 
 export interface Breakdown {
@@ -58,6 +70,16 @@ export interface PortfolioSummary {
   cashAndMoneyMarketValue: number;
   assetClassBreakdown: Breakdown[];
   topHoldings: HoldingWithComputedValues[];
+  /** Sum of costBasis for base-currency investment holdings that have averagePrice set. */
+  totalCostBasis: number;
+  /** Sum of unrealizedPL for base-currency investment holdings that have averagePrice set. */
+  totalUnrealizedPL: number;
+  /** totalUnrealizedPL / totalCostBasis when totalCostBasis > 0, else null. */
+  totalUnrealizedPLPercent: number | null;
+  /** Count of base-currency non-Cash/MM holdings where isStale is true. */
+  staleHoldingsCount: number;
+  /** Count of base-currency non-Cash/MM holdings where averagePrice is absent. */
+  missingCostBasisCount: number;
 }
 
 export interface PortfolioSnapshot {
@@ -217,7 +239,7 @@ export interface PrivacyFlags {
 
 /**
  * Holding shape sent to the AI. Strips fields per PrivacyFlags.
- * Always includes: symbol, assetClass, currency, portfolioWeight, asOfDate.
+ * Always includes: symbol, assetClass, currency, portfolioWeight, asOfDate, isStale, daysSinceUpdate.
  */
 export interface HoldingAnalysisInput {
   symbol: string;
@@ -235,6 +257,18 @@ export interface HoldingAnalysisInput {
   sector?: string;
   region?: string;
   asOfDate: string;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  averagePrice?: number;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  costBasis?: number;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  unrealizedPL?: number;
+  /** Always included (ratio, not absolute). */
+  unrealizedPLPercent?: number;
+  /** Always included. */
+  isStale: boolean;
+  /** Always included. */
+  daysSinceUpdate: number;
 }
 
 export interface AnalysisPortfolioContext {
@@ -251,6 +285,26 @@ export interface AnalysisPortfolioContext {
   topHoldings: HoldingAnalysisInput[];
   /** Only present when PrivacyFlags.includeExactValues is true. */
   cashAndMoneyMarketValue?: number;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  totalCostBasis?: number;
+  /** Only present when PrivacyFlags.includeExactValues is true. */
+  totalUnrealizedPL?: number;
+  /** Always included (ratio). */
+  totalUnrealizedPLPercent?: number;
+  /** Always included. */
+  staleHoldingsCount: number;
+  /** Always included — earliest asOfDate across all holdings. */
+  oldestAsOfDate: string;
+}
+
+// ---------------------------------------------------------------------------
+// Bulk price update
+// ---------------------------------------------------------------------------
+
+export interface BulkPriceUpdate {
+  id: string;
+  currentPrice: number;
+  asOfDate: string;
 }
 
 export interface AnalysisSource {

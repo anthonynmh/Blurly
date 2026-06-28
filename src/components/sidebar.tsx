@@ -1,19 +1,43 @@
 import { NavLink } from 'react-router-dom';
-import { BarChart3, Bot, Camera, Eye, History, Layers, Settings, Sparkles } from 'lucide-react';
+import { BarChart3, Bot, Eye, History, Layers, Settings, Sparkles } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { getVersion } from '@tauri-apps/api/app';
 import { cn } from '@/lib/utils';
 
-const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
-  { to: '/holdings', label: 'Holdings', icon: Layers, end: false },
-  { to: '/snapshots', label: 'Snapshots', icon: Camera, end: false },
-  { to: '/analyst', label: 'Analyst', icon: Sparkles, end: false },
-  { to: '/analysis-history', label: 'Analysis History', icon: History, end: false },
-  { to: '/watchlist', label: 'Watchlist', icon: Eye, end: false },
-  { to: '/ai-settings', label: 'AI Settings', icon: Bot, end: false },
-  { to: '/settings', label: 'Settings', icon: Settings, end: false },
-];
+const NAV_GROUPS = [
+  {
+    label: 'Dashboard',
+    items: [
+      { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
+      { to: '/holdings', label: 'Holdings', icon: Layers, end: false },
+      { to: '/watchlist', label: 'Watchlist', icon: Eye, end: false },
+    ],
+  },
+  {
+    label: 'Analyst',
+    items: [
+      { to: '/analyst', label: 'Analyst', icon: Sparkles, end: false },
+      { to: '/analysis-history', label: 'Analysis History', icon: History, end: false },
+    ],
+  },
+  {
+    label: 'User Settings',
+    items: [
+      { to: '/ai-settings', label: 'AI Settings', icon: Bot, end: false },
+      { to: '/settings', label: 'Settings', icon: Settings, end: false },
+    ],
+  },
+] as const;
 
 export function Sidebar() {
+  const { data: version } = useQuery({
+    queryKey: ['app-version'],
+    queryFn: getVersion,
+    staleTime: Infinity,
+    // Gracefully ignore errors — don't crash the sidebar over a missing version.
+    retry: false,
+  });
+
   return (
     <nav className="flex w-56 flex-col border-r bg-muted/10 px-3 py-4">
       <div className="mb-6 px-3">
@@ -21,27 +45,43 @@ export function Sidebar() {
         <p className="text-xs text-muted-foreground">Portfolio Tracker</p>
       </div>
 
-      <ul className="flex flex-col gap-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-          <li key={to}>
-            <NavLink
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
-                  isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )
-              }
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </NavLink>
-          </li>
+      <div className="flex flex-1 flex-col gap-4">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label}>
+            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {group.label}
+            </p>
+            <ul className="flex flex-col gap-0.5">
+              {group.items.map(({ to, label, icon: Icon, end }) => (
+                <li key={to}>
+                  <NavLink
+                    to={to}
+                    end={end}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )
+                    }
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
+
+      {/* Version footnote */}
+      {version && (
+        <p className="mt-4 px-3 text-[10px] text-muted-foreground/50">
+          v{version}
+        </p>
+      )}
     </nav>
   );
 }

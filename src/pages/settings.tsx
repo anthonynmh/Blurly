@@ -15,14 +15,23 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { settingsService } from '@/services/settings-service';
 import { useEffect } from 'react';
 
+const CURRENCY_OPTIONS = ['USD', 'SGD'] as const;
+
 const settingsSchema = z.object({
   portfolioName: z.string().min(1, 'Portfolio name is required'),
-  baseCurrency: z.string().min(3).max(3).toUpperCase(),
-  defaultCurrency: z.string().min(3).max(3).toUpperCase(),
+  baseCurrency: z.enum(CURRENCY_OPTIONS),
+  defaultCurrency: z.enum(CURRENCY_OPTIONS),
 });
 
 type SettingsFormValues = z.infer<typeof settingsSchema>;
@@ -49,8 +58,13 @@ export default function SettingsPage() {
     if (settings) {
       form.reset({
         portfolioName: settings.portfolioName,
-        baseCurrency: settings.baseCurrency,
-        defaultCurrency: settings.defaultCurrency,
+        // Fall back to USD if an existing value isn't in our supported set
+        baseCurrency: CURRENCY_OPTIONS.includes(settings.baseCurrency as 'USD' | 'SGD')
+          ? (settings.baseCurrency as 'USD' | 'SGD')
+          : 'USD',
+        defaultCurrency: CURRENCY_OPTIONS.includes(settings.defaultCurrency as 'USD' | 'SGD')
+          ? (settings.defaultCurrency as 'USD' | 'SGD')
+          : 'USD',
       });
     }
   }, [settings, form]);
@@ -107,9 +121,18 @@ export default function SettingsPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Base Currency</FormLabel>
-                    <FormControl>
-                      <Input placeholder="USD" maxLength={3} {...field} />
-                    </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CURRENCY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormDescription>
                       Holdings in this currency are included in total value and weight calculations.
                     </FormDescription>
@@ -124,9 +147,18 @@ export default function SettingsPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Default Currency</FormLabel>
-                    <FormControl>
-                      <Input placeholder="USD" maxLength={3} {...field} />
-                    </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CURRENCY_OPTIONS.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormDescription>Pre-fills the currency field on new holdings.</FormDescription>
                     <FormMessage />
                   </FormItem>

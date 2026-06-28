@@ -30,7 +30,13 @@ Structure the memo with these sections (use markdown headings):
 ## Impacted Holdings
 ## Questions Before Acting
 ## Data Limitations
-## Sources";
+## Sources
+
+Data quality and freshness notes:
+- Prices and dates in this context are entered manually by the user; treat them as point-in-time snapshots, not live quotes.
+- Each holding includes an `isStale` flag and `daysSinceUpdate`. Weight your conclusions accordingly: if a position is stale, qualify any move-based commentary with a caveat that the price may no longer reflect current market conditions.
+- When `staleHoldingsCount > 0`, include a brief 'Data Freshness' note at the start of your response listing how many positions are stale and the oldest as-of date provided.
+- Do not invent prices. This applies especially when prices are stale: never estimate or fabricate a current price — use only the prices the user has provided.";
 
 /// Per-analysis-type focus directive prepended to BASE_PERSONA.
 pub fn focus_for(analysis_type: &str) -> &'static str {
