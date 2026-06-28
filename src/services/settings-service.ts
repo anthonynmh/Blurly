@@ -5,6 +5,14 @@ export interface UpdateSettingsInput {
   portfolioName?: string;
   baseCurrency?: string;
   defaultCurrency?: string;
+  /** USD↔SGD exchange rate: 1 USD = N SGD. */
+  fxUsdSgdRate?: number;
+  /** Date the FX rate was last set (YYYY-MM-DD). */
+  fxUsdSgdAsOf?: string;
+  /** Provenance: 'manual' when set by the user; 'web_refresh' reserved for future. */
+  fxUsdSgdSource?: string;
+  /** Days before a holding's price is flagged stale. Null → app default (7). */
+  stalenessThresholdDays?: number;
 }
 
 export const settingsService = {

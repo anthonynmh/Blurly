@@ -374,14 +374,11 @@ describe('computeHoldingsWithValues — custom stalenessThresholdDays', () => {
   });
 
   it('staleHoldingsCount in summary uses the custom threshold', () => {
-    // h1: 8 days old → stale at threshold 7, not stale at threshold 10
-    const h1 = makeHolding({ id: 'h1', asOfDate: '2024-01-01', assetClass: 'Stock', quantity: 1 });
-    const today = new Date(Date.UTC(2024, 0, 9)); // 9 days after 2024-01-01 = 8 days since
-    void today;
+    // h1: very old date → stale at threshold 7, not stale at threshold 99999
+    const h1 = makeHolding({ id: 'h1', asOfDate: '2020-01-01', assetClass: 'Stock', quantity: 1 });
     const summary7 = computePortfolioSummary([h1], 'USD', 7);
-    const summary10 = computePortfolioSummary([h1], 'USD', 10);
-    // With default threshold of 7: 8-day-old holding is stale
-    expect(summary7.staleHoldingsCount).toBeGreaterThanOrEqual(0);
+    // With default threshold of 7: a 2020-01-01 holding is definitely stale
+    expect(summary7.staleHoldingsCount).toBeGreaterThan(0);
     // With threshold of 99999: nothing should be stale
     const summaryBig = computePortfolioSummary([h1], 'USD', 99999);
     expect(summaryBig.staleHoldingsCount).toBe(0);

@@ -24,14 +24,29 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { settingsService } from '@/services/settings-service';
+import { todayIso } from '@/lib/formatters';
 import { useEffect } from 'react';
 
 const CURRENCY_OPTIONS = ['USD', 'SGD'] as const;
+const TODAY = todayIso();
 
 const settingsSchema = z.object({
   portfolioName: z.string().min(1, 'Portfolio name is required'),
   baseCurrency: z.enum(CURRENCY_OPTIONS),
   defaultCurrency: z.enum(CURRENCY_OPTIONS),
+  stalenessThresholdDays: z
+    .number({ invalid_type_error: 'Must be a number' })
+    .int('Must be a whole number')
+    .min(1, 'Must be at least 1 day')
+    .optional(),
+  fxUsdSgdRate: z
+    .number({ invalid_type_error: 'Must be a number' })
+    .positive('Rate must be greater than 0')
+    .optional(),
+  fxUsdSgdAsOf: z
+    .string()
+    .refine((v) => !v || v <= TODAY, { message: 'As-of date cannot be in the future' })
+    .optional(),
 });
 
 type SettingsFormValues = z.infer<typeof settingsSchema>;
@@ -50,6 +65,9 @@ export default function SettingsPage() {
       portfolioName: '',
       baseCurrency: 'USD',
       defaultCurrency: 'USD',
+      stalenessThresholdDays: 7,
+      fxUsdSgdRate: undefined,
+      fxUsdSgdAsOf: '',
     },
   });
 
@@ -65,12 +83,27 @@ export default function SettingsPage() {
         defaultCurrency: CURRENCY_OPTIONS.includes(settings.defaultCurrency as 'USD' | 'SGD')
           ? (settings.defaultCurrency as 'USD' | 'SGD')
           : 'USD',
+        stalenessThresholdDays: settings.stalenessThresholdDays ?? 7,
+        fxUsdSgdRate: settings.fxUsdSgdRate ?? undefined,
+        fxUsdSgdAsOf: settings.fxUsdSgdAsOf ?? '',
       });
     }
   }, [settings, form]);
 
   const mutation = useMutation({
-    mutationFn: (values: SettingsFormValues) => settingsService.update(values),
+    mutationFn: (values: SettingsFormValues) => {
+      const fxRate = values.fxUsdSgdRate;
+      return settingsService.update({
+        portfolioName: values.portfolioName,
+        baseCurrency: values.baseCurrency,
+        defaultCurrency: values.defaultCurrency,
+        stalenessThresholdDays: values.stalenessThresholdDays,
+        fxUsdSgdRate: fxRate,
+        fxUsdSgdAsOf: values.fxUsdSgdAsOf || undefined,
+        // Always set source to 'manual' when saving a rate from this form.
+        fxUsdSgdSource: fxRate != null ? 'manual' : undefined,
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['settings'] });
       toast.success('Settings saved');
@@ -164,6 +197,98 @@ export default function SettingsPage() {
                   </FormItem>
                 )}
               />
+
+              {/* ── Staleness Threshold ── */}
+              <FormField
+                control={form.control}
+                name="stalenessThresholdDays"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Staleness Threshold</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="7"
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          field.onChange(v === '' ? undefined : parseInt(v, 10));
+                        }}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Holdings whose price hasn&apos;t been updated within this many days are
+                      flagged as stale.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* ── USD↔SGD FX Rate ── */}
+              <FormItem>
+                <FormLabel>USD↔SGD FX Rate</FormLabel>
+                <div className="flex items-center gap-2">
+                  <FormField
+                    control={form.control}
+                    name="fxUsdSgdRate"
+                    render={({ field }) => (
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="any"
+                          min="0.0001"
+                          placeholder="e.g. 1.35"
+                          className="w-32"
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            field.onChange(v === '' ? undefined : parseFloat(v));
+                          }}
+                        />
+                      </FormControl>
+                    )}
+                  />
+                  <span className="text-sm text-muted-foreground">as of</span>
+                  <FormField
+                    control={form.control}
+                    name="fxUsdSgdAsOf"
+                    render={({ field }) => (
+                      <FormControl>
+                        <Input
+                          type="date"
+                          max={TODAY}
+                          min="2000-01-01"
+                          className="w-36"
+                          {...field}
+                          value={field.value ?? ''}
+                        />
+                      </FormControl>
+                    )}
+                  />
+                  {/* Slot reserved for a future "Refresh from web" button */}
+                  <div />
+                </div>
+                <FormDescription>
+                  Manually maintained rate used for the Dashboard&apos;s USD↔SGD toggle.
+                  1 USD = N SGD.
+                </FormDescription>
+                {/* Show validation errors for either sub-field */}
+                {form.formState.errors.fxUsdSgdRate && (
+                  <p className="text-sm font-medium text-destructive">
+                    {form.formState.errors.fxUsdSgdRate.message}
+                  </p>
+                )}
+                {form.formState.errors.fxUsdSgdAsOf && (
+                  <p className="text-sm font-medium text-destructive">
+                    {form.formState.errors.fxUsdSgdAsOf.message}
+                  </p>
+                )}
+              </FormItem>
 
               <Button type="submit" disabled={mutation.isPending}>
                 {mutation.isPending ? 'Saving…' : 'Save Settings'}
