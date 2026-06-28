@@ -152,12 +152,12 @@ export function HoldingForm({
                 name="averagePrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Average cost *</FormLabel>
+                    <FormLabel>Average buy price *</FormLabel>
                     <FormControl>
                       <Input type="number" step="any" min="0" placeholder="150.00" {...field} />
                     </FormControl>
                     <FormDescription>
-                      Your average price per share. Used to compute unrealized P/L.
+                      What you paid per share/unit. Used for cost basis and unrealized P/L.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -168,10 +168,13 @@ export function HoldingForm({
                 name="currentPrice"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Current price *</FormLabel>
+                    <FormLabel>Latest market price *</FormLabel>
                     <FormControl>
                       <Input type="number" step="any" min="0" placeholder="175.00" {...field} />
                     </FormControl>
+                    <FormDescription>
+                      The price Blurly uses to value this holding today. Price updates change this field, not your buy price.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -188,6 +191,9 @@ export function HoldingForm({
                     <FormControl>
                       <Input type="number" step="any" min="0" placeholder="10" {...field} />
                     </FormControl>
+                    <FormDescription>
+                      Number of shares/units you currently hold.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -221,7 +227,7 @@ export function HoldingForm({
                 name="asOfDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>As-of date *</FormLabel>
+                    <FormLabel>Price as of *</FormLabel>
                     <FormControl>
                       <Input type="date" {...field} />
                     </FormControl>
@@ -236,7 +242,7 @@ export function HoldingForm({
               <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm tabular-nums">
                 {formatCurrency(marketValue, watchCurrency || 'USD')}
               </div>
-              <FormDescription>quantity × current price</FormDescription>
+              <FormDescription>quantity × latest market price</FormDescription>
             </FormItem>
           </div>
 
