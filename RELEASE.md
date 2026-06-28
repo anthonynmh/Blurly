@@ -1,14 +1,14 @@
 # Release Guide
 
-This repo currently uses two release paths:
+This repo uses GitHub Actions for release builds:
 
-- `macOS`: manual local release on a maintainer Mac
 - `Windows`: automated GitHub Actions release on tag push
+- `macOS`: automated GitHub Actions release on tag push or manual workflow dispatch
 
 The intended end state for a version is one GitHub Release containing:
 
 - Windows installers uploaded by GitHub Actions
-- a signed + notarized macOS DMG uploaded manually
+- a signed + notarized macOS DMG uploaded by GitHub Actions
 
 ## Versioning
 
@@ -25,31 +25,55 @@ Use a matching Git tag for the release, for example:
 
 `src-tauri/Cargo.lock` may also change when the release build runs.
 
-## Windows Release
+## GitHub Actions Release
 
-Windows artifacts are built automatically by [release.yml](.github/workflows/release.yml).
+Artifacts are built automatically by [release.yml](.github/workflows/release.yml).
 
 How it works:
 
 1. Push a tag matching `v*.*.*`.
-2. GitHub Actions runs the `build-windows` job on `windows-latest`.
-3. The workflow installs dependencies, builds the Tauri app for `x86_64-pc-windows-msvc`, and publishes the Windows installers to the GitHub Release for that tag.
+2. GitHub Actions runs:
+   - `build-windows` on `windows-latest`
+   - `build-macos` on `macos-latest`
+3. Windows installers are published to the GitHub Release for that tag.
+4. The macOS DMG is signed, notarized, stapled, validated, and uploaded to the same GitHub Release.
+
+To upload macOS artifacts for an existing tag, run the `Release` workflow manually with:
+
+- `tag`: the existing release tag, for example `v0.4.0`
+- `build_windows`: `false` unless the Windows artifacts should be rebuilt too
 
 Important notes:
 
 - The workflow uses `tauri-apps/tauri-action@v0`.
 - The release body currently warns that Windows builds are unsigned and may trigger SmartScreen.
-- macOS artifacts are not produced by GitHub Actions today.
+- macOS builds require signing and notarization secrets to be configured in GitHub Actions.
 
-## macOS Release
+## macOS Release Secrets
 
-macOS releases are created manually on a maintainer Mac.
+The `build-macos` job expects these GitHub Actions secrets:
 
-### Prerequisites
+- `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`
+- `APPLE_CERTIFICATE_PASSWORD`: password for the `.p12`
+- `APPLE_ID`: Apple ID used for notarization
+- `APPLE_PASSWORD`: app-specific password for the Apple ID
+- `APPLE_TEAM_ID`: Apple developer team ID
+
+The `.p12` must contain the Developer ID certificate configured in `src-tauri/tauri.conf.json`:
+
+```text
+Developer ID Application: Anthony Neo (D4NKPP62S5)
+```
+
+## Manual macOS Fallback
+
+macOS releases can still be created manually on a maintainer Mac if Actions is unavailable.
+
+Prerequisites:
 
 - Xcode Command Line Tools installed
 - `pnpm install` already run
-- the Developer ID certificate configured in `src-tauri/tauri.conf.json` is installed in Keychain:
+- the Developer ID certificate installed in Keychain:
   `Developer ID Application: Anthony Neo (D4NKPP62S5)`
 - a repo-root `.env` file containing:
   - `APPLE_ID`
@@ -58,7 +82,7 @@ macOS releases are created manually on a maintainer Mac.
 
 The release scripts load `.env` through [scripts/with-env.sh](scripts/with-env.sh).
 
-### Step 1: Build the signed app + DMG
+### Build the signed app + DMG
 
 Run:
 
@@ -79,7 +103,7 @@ This does the following:
 src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_aarch64.dmg
 ```
 
-### Step 2: Notarize the outer DMG
+### Notarize the outer DMG
 
 The `.app` is notarized during the Tauri build, but the outer DMG should also be submitted to Apple Notary before final distribution.
 
@@ -96,7 +120,7 @@ Run:
 
 Wait for status `Accepted`.
 
-### Step 3: Staple the DMG
+### Staple the DMG
 
 Run:
 
@@ -110,7 +134,7 @@ Optional direct check:
 xcrun stapler validate src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_aarch64.dmg
 ```
 
-### Step 4: Validate the release
+### Validate the release
 
 Run:
 
@@ -132,7 +156,7 @@ xcrun stapler validate src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_aarc
 spctl -a -vv -t open src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_aarch64.dmg
 ```
 
-### Step 5: Upload the macOS artifact
+### Upload the macOS artifact
 
 After validation succeeds, upload:
 
@@ -147,9 +171,8 @@ to the GitHub Release for the matching tag.
 1. Bump the app version in the three version files.
 2. Commit the release changes.
 3. Create and push the matching tag, for example `v0.4.0`.
-4. Wait for the GitHub Actions Windows workflow to publish Windows artifacts.
-5. Run the manual macOS DMG flow locally.
-6. Upload the validated macOS DMG to the same GitHub Release.
+4. Wait for the GitHub Actions workflow to publish Windows and macOS artifacts.
+5. If macOS needs to be added to an existing release, run the `Release` workflow manually with the existing tag and `build_windows` disabled.
 
 ## Troubleshooting
 

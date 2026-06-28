@@ -4,15 +4,29 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build/upload macOS artifacts for'
+        required: true
+        default: 'v0.4.0'
+      build_windows:
+        description: 'Also run the Windows release job'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
   build-windows:
+    if: ${{ github.event_name == 'push' || inputs.build_windows }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -39,14 +53,81 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Blurly ${{ github.ref_name }}'
+          tagName: "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          releaseName: "Blurly ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           releaseBody: |
-            Windows installers built automatically from tag `${{ github.ref_name }}`.
+            Windows installers built automatically from tag `${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}`.
 
             **First launch on Windows:** SmartScreen will warn that the app is from an unrecognized publisher (unsigned). Click **More info** → **Run anyway**. After that it launches normally.
 
-            macOS artifacts are uploaded separately to this release.
+            macOS artifacts are signed, notarized, and uploaded by GitHub Actions.
           releaseDraft: false
           prerelease: false
           args: ''
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build signed and notarized macOS DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          pnpm tauri build --target aarch64-apple-darwin --bundles dmg
+          dmg_path="$(find src-tauri/target/release/bundle/dmg -type f -name 'Blurly_*.dmg' | head -n 1)"
+          test -n "$dmg_path"
+          echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl -a -vv -t open "$DMG_PATH"
+
+      - name: Upload macOS DMG to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null || gh release create "$RELEASE_TAG" --title "Blurly $RELEASE_TAG" --notes "Blurly $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" "$DMG_PATH" --clobber
