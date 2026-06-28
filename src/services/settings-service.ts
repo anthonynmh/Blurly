@@ -6,11 +6,11 @@ export interface UpdateSettingsInput {
   baseCurrency?: string;
   defaultCurrency?: string;
   /** USD↔SGD exchange rate: 1 USD = N SGD. */
-  fxUsdSgdRate?: number;
+  fxUsdSgdRate?: number | null;
   /** Date the FX rate was last set (YYYY-MM-DD). */
-  fxUsdSgdAsOf?: string;
+  fxUsdSgdAsOf?: string | null;
   /** Provenance: 'manual' when set by the user; 'web_refresh' reserved for future. */
-  fxUsdSgdSource?: string;
+  fxUsdSgdSource?: string | null;
   /** Days before a holding's price is flagged stale. Null → app default (7). */
   stalenessThresholdDays?: number;
 }

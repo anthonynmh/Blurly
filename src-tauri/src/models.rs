@@ -139,9 +139,12 @@ pub struct UpdateSettings {
     pub portfolio_name: Option<String>,
     pub base_currency: Option<String>,
     pub default_currency: Option<String>,
-    pub fx_usd_sgd_rate: Option<f64>,
-    pub fx_usd_sgd_as_of: Option<String>,
-    pub fx_usd_sgd_source: Option<String>,
+    /// `None` means "leave unchanged"; `Some(None)` means "clear the stored value".
+    pub fx_usd_sgd_rate: Option<Option<f64>>,
+    /// `None` means "leave unchanged"; `Some(None)` means "clear the stored value".
+    pub fx_usd_sgd_as_of: Option<Option<String>>,
+    /// `None` means "leave unchanged"; `Some(None)` means "clear the stored value".
+    pub fx_usd_sgd_source: Option<Option<String>>,
     pub staleness_threshold_days: Option<i64>,
 }
 

@@ -10,10 +10,12 @@ import { EmptyState } from '@/components/empty-state';
 import { holdingService } from '@/services/holding-service';
 import { portfolioService } from '@/services/portfolio-service';
 import { computeHoldingsWithValues } from '@/lib/calculations';
+import type { HoldingWithComputedValues } from '@/lib/types';
 
 export default function HoldingsPage() {
   const navigate = useNavigate();
   const [updatePricesOpen, setUpdatePricesOpen] = useState(false);
+  const [selectedHoldingId, setSelectedHoldingId] = useState<string | null>(null);
 
   const { data: portfolio } = useQuery({
     queryKey: ['portfolio', 'default'],
@@ -29,12 +31,17 @@ export default function HoldingsPage() {
   const baseCurrency = portfolio?.baseCurrency ?? 'USD';
   const holdingsWithValues = computeHoldingsWithValues(rawHoldings ?? [], baseCurrency);
 
+  function openUpdatePrices(holding?: HoldingWithComputedValues) {
+    setSelectedHoldingId(holding?.id ?? null);
+    setUpdatePricesOpen(true);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Holdings</h2>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setUpdatePricesOpen(true)} disabled={holdingsWithValues.length === 0}>
+          <Button variant="outline" onClick={() => openUpdatePrices()} disabled={holdingsWithValues.length === 0}>
             <RefreshCw className="h-4 w-4" />
             Update Prices
           </Button>
@@ -59,13 +66,18 @@ export default function HoldingsPage() {
           holdings={holdingsWithValues}
           baseCurrency={baseCurrency}
           portfolioId="default"
+          onUpdatePrice={openUpdatePrices}
         />
       )}
 
       <UpdatePricesDialog
         open={updatePricesOpen}
-        onOpenChange={setUpdatePricesOpen}
+        onOpenChange={(open) => {
+          setUpdatePricesOpen(open);
+          if (!open) setSelectedHoldingId(null);
+        }}
         holdings={holdingsWithValues}
+        initialHoldingId={selectedHoldingId}
       />
     </div>
   );

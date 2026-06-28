@@ -93,15 +93,16 @@ export default function SettingsPage() {
   const mutation = useMutation({
     mutationFn: (values: SettingsFormValues) => {
       const fxRate = values.fxUsdSgdRate;
+      const hasFxRate = fxRate != null;
       return settingsService.update({
         portfolioName: values.portfolioName,
         baseCurrency: values.baseCurrency,
         defaultCurrency: values.defaultCurrency,
         stalenessThresholdDays: values.stalenessThresholdDays,
-        fxUsdSgdRate: fxRate,
-        fxUsdSgdAsOf: values.fxUsdSgdAsOf || undefined,
+        fxUsdSgdRate: hasFxRate ? fxRate : null,
+        fxUsdSgdAsOf: hasFxRate ? (values.fxUsdSgdAsOf || null) : null,
         // Always set source to 'manual' when saving a rate from this form.
-        fxUsdSgdSource: fxRate != null ? 'manual' : undefined,
+        fxUsdSgdSource: hasFxRate ? 'manual' : null,
       });
     },
     onSuccess: () => {

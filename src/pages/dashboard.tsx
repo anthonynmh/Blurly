@@ -43,6 +43,10 @@ function readDisplayCcy(): 'USD' | 'SGD' | null {
   return v === 'USD' || v === 'SGD' ? v : null;
 }
 
+function normalizeDashboardCurrency(value: string): 'USD' | 'SGD' {
+  return value === 'SGD' ? 'SGD' : 'USD';
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [updatePricesOpen, setUpdatePricesOpen] = useState(false);
@@ -74,16 +78,20 @@ export default function DashboardPage() {
   const stalenessThreshold = settings?.stalenessThresholdDays ?? 7;
   const fxRate = settings?.fxUsdSgdRate ?? null;
   const fxAsOf = settings?.fxUsdSgdAsOf ?? null;
+  const baseDashboardCcy = normalizeDashboardCurrency(baseCurrency);
+  const fxToggleEnabled = fxRate != null;
 
-  // Resolve the active display currency: saved value or fall back to baseCurrency.
-  const activeCcy: 'USD' | 'SGD' = displayCcy ?? (baseCurrency as 'USD' | 'SGD') ?? 'USD';
+  // Persisted toggle only applies while an FX rate exists; otherwise render in base currency.
+  const activeCcy: 'USD' | 'SGD' = fxToggleEnabled
+    ? (displayCcy ?? baseDashboardCcy)
+    : baseDashboardCcy;
 
   const holdings = rawHoldings ?? [];
   const summary = computePortfolioSummary(holdings, baseCurrency, stalenessThreshold);
   const holdingsWithValues = computeHoldingsWithValues(holdings, baseCurrency, stalenessThreshold);
 
   // Convert summary when toggled to a different currency and rate is available.
-  const needsConversion = activeCcy !== baseCurrency && fxRate != null;
+  const needsConversion = activeCcy !== baseCurrency && fxToggleEnabled;
   const displaySummary = needsConversion
     ? convertSummaryToDisplayCurrency(summary, holdings, activeCcy, { 'USD->SGD': fxRate })
     : summary;
@@ -168,7 +176,7 @@ export default function DashboardPage() {
             )}
 
             {/* USD↔SGD currency toggle */}
-            {fxRate != null ? (
+            {fxToggleEnabled ? (
               <div className="flex items-center gap-1">
                 <Button
                   variant={activeCcy === 'USD' ? 'secondary' : 'outline'}
