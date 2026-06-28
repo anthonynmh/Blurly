@@ -7,6 +7,7 @@ import type {
 } from './types';
 import {
   computeHoldingsWithValues,
+  computePortfolioSummary,
   groupByAssetClass,
   groupByRegion,
   groupBySector,
@@ -21,7 +22,8 @@ import {
  * pure so it stays unit-testable and Tauri-free.
  *
  * Privacy flags strip exact values / quantities / notes before returning.
- * Symbols, asset classes, and portfolio weights are always included.
+ * Symbols, asset classes, portfolio weights, isStale, and daysSinceUpdate are
+ * always included — they are metadata, not absolute values.
  */
 export function buildAnalysisContext(
   holdings: Holding[],
@@ -35,6 +37,18 @@ export function buildAnalysisContext(
     .filter((h) => h.assetClass === 'Cash' || h.assetClass === 'MoneyMarket')
     .reduce((sum, h) => sum + h.marketValue, 0);
 
+  // Summary for P/L aggregates and staleness counts.
+  const summary = computePortfolioSummary(holdings, baseCurrency);
+
+  // Oldest as-of date across all holdings (empty portfolio falls back to today).
+  const oldestAsOfDate =
+    holdings.length > 0
+      ? holdings.reduce(
+          (oldest, h) => (h.asOfDate < oldest ? h.asOfDate : oldest),
+          holdings[0].asOfDate,
+        )
+      : new Date().toISOString().slice(0, 10);
+
   const mapHolding = (h: HoldingWithComputedValues): HoldingAnalysisInput => ({
     symbol: h.symbol,
     name: h.name,
@@ -47,6 +61,14 @@ export function buildAnalysisContext(
     sector: h.sector,
     region: h.region,
     asOfDate: h.asOfDate,
+    // Cost-basis fields — absolute values gated, ratio always sent.
+    averagePrice: privacy.includeExactValues ? h.averagePrice : undefined,
+    costBasis: privacy.includeExactValues && h.costBasis != null ? h.costBasis : undefined,
+    unrealizedPL: privacy.includeExactValues && h.unrealizedPL != null ? h.unrealizedPL : undefined,
+    unrealizedPLPercent: h.unrealizedPLPercent ?? undefined,
+    // Staleness metadata — always sent (not absolute values).
+    isStale: h.isStale,
+    daysSinceUpdate: h.daysSinceUpdate,
   });
 
   return {
@@ -61,6 +83,13 @@ export function buildAnalysisContext(
       region: groupByRegion(baseHoldings),
     },
     cashAndMoneyMarketValue: privacy.includeExactValues ? cashAndMoneyMarketValue : undefined,
+    // P/L aggregates — absolute values gated, ratio always sent.
+    totalCostBasis: privacy.includeExactValues ? summary.totalCostBasis : undefined,
+    totalUnrealizedPL: privacy.includeExactValues ? summary.totalUnrealizedPL : undefined,
+    totalUnrealizedPLPercent: summary.totalUnrealizedPLPercent ?? undefined,
+    // Freshness metadata — always sent.
+    staleHoldingsCount: summary.staleHoldingsCount,
+    oldestAsOfDate,
   };
 }
 
