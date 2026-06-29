@@ -3,6 +3,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,8 +26,10 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { settingsService } from '@/services/settings-service';
+import { twelveDataService } from '@/services/twelve-data-service';
 import { todayIso } from '@/lib/formatters';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { ApiKeyStatus } from '@/lib/types';
 
 const CURRENCY_OPTIONS = ['USD', 'SGD'] as const;
 const TODAY = todayIso();
@@ -308,6 +312,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <TwelveDataKeyCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Data</CardTitle>
@@ -324,4 +330,168 @@ export default function SettingsPage() {
       </Card>
     </div>
   );
+}
+
+function TwelveDataKeyCard() {
+  const queryClient = useQueryClient();
+  const [apiKey, setApiKey] = useState('');
+  const [testing, setTesting] = useState(false);
+  const typedKeyValid = apiKey.trim().length >= 8;
+  const statusQueryKey = ['twelve-data-key-status'] as const;
+
+  const { data: keyStatus } = useQuery({
+    queryKey: statusQueryKey,
+    queryFn: () => twelveDataService.keyStatus(),
+    retry: false,
+  });
+
+  const hasSavedKey = keyStatus?.status === 'saved';
+  const statusMeta = getMarketDataKeyStatusMeta(keyStatus);
+
+  const saveKey = useMutation({
+    mutationFn: () => twelveDataService.setKey(apiKey),
+    onSuccess: (status) => {
+      queryClient.setQueryData(statusQueryKey, status);
+      void queryClient.invalidateQueries({ queryKey: statusQueryKey });
+      setApiKey('');
+      toast.success('Twelve Data key saved');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteKey = useMutation({
+    mutationFn: () => twelveDataService.deleteKey(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: statusQueryKey });
+      toast.success('Twelve Data key removed');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  async function handleTest() {
+    if (!typedKeyValid) return;
+    setTesting(true);
+    try {
+      const result = await twelveDataService.testKey(apiKey);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4" />
+          Twelve Data
+          {hasSavedKey && (
+            <Badge variant="secondary" className="ml-2 text-xs">
+              <CheckCircle2 className="h-3 w-3" /> Connected
+            </Badge>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Bring your own Twelve Data API key for web price refreshes. The key is stored encrypted in local app data.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className={statusMeta.containerClass}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{statusMeta.title}</p>
+              <p className="text-sm text-muted-foreground">{statusMeta.description}</p>
+            </div>
+            <Badge variant={statusMeta.badgeVariant}>{statusMeta.badgeLabel}</Badge>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="twelve-data-key">
+            {hasSavedKey ? 'Replace key' : 'Enter key'}
+          </label>
+          <Input
+            id="twelve-data-key"
+            type="password"
+            placeholder="Twelve Data API key"
+            value={apiKey}
+            autoComplete="off"
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Test validates the typed key only. Save is required before web price refresh can run.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTest}
+            disabled={testing || !typedKeyValid}
+          >
+            {testing ? 'Testing...' : 'Test connection'}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => saveKey.mutate()}
+            disabled={saveKey.isPending || !typedKeyValid}
+          >
+            {saveKey.isPending ? 'Saving...' : hasSavedKey ? 'Replace saved key' : 'Save key'}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => deleteKey.mutate()}
+            disabled={deleteKey.isPending}
+          >
+            <Trash2 className="h-4 w-4" />
+            {hasSavedKey ? 'Remove saved key' : 'Clear saved key'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getMarketDataKeyStatusMeta(status?: ApiKeyStatus): {
+  title: string;
+  description: string;
+  badgeLabel: string;
+  badgeVariant: 'secondary' | 'outline' | 'destructive';
+  containerClass: string;
+} {
+  switch (status?.status) {
+    case 'saved':
+      return {
+        title: 'Key saved',
+        description: 'Blurly can decrypt the saved Twelve Data key for price refreshes.',
+        badgeLabel: 'Saved',
+        badgeVariant: 'secondary',
+        containerClass: 'space-y-3 rounded-md border bg-muted/30 p-3',
+      };
+    case 'error':
+      return {
+        title: 'Saved key unreadable',
+        description: status.message ?? 'Blurly could not decrypt the saved Twelve Data key. Clear and re-save it.',
+        badgeLabel: 'Error',
+        badgeVariant: 'destructive',
+        containerClass: 'space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-3',
+      };
+    case 'missing':
+    default:
+      return {
+        title: 'No key saved',
+        description: 'Save a Twelve Data key before using web price refresh.',
+        badgeLabel: 'Missing',
+        badgeVariant: 'outline',
+        containerClass: 'space-y-3 rounded-md border border-dashed p-3',
+      };
+  }
 }

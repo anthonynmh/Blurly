@@ -27,10 +27,24 @@ fn row_to_holding(row: &rusqlite::Row<'_>) -> rusqlite::Result<Holding> {
         created_at: row.get(14)?,
         updated_at: row.get(15)?,
         price_updated_at: row.get(16)?,
+        price_source: row.get(17)?,
+        price_refreshed_at: row.get(18)?,
+        price_refresh_error: row.get(19)?,
+        provider_symbol: row.get(20)?,
     })
 }
 
-fn query_holdings(conn: &Connection, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Vec<Holding>, CommandError> {
+const HOLDING_SELECT_COLS: &str =
+    "id, portfolio_id, symbol, name, asset_class, quantity, average_price,
+     current_price, currency, sector, region, broker, as_of_date, notes,
+     created_at, updated_at, price_updated_at, price_source,
+     price_refreshed_at, price_refresh_error, provider_symbol";
+
+fn query_holdings(
+    conn: &Connection,
+    sql: &str,
+    params: &[&dyn rusqlite::ToSql],
+) -> Result<Vec<Holding>, CommandError> {
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map(params, row_to_holding)?;
     let mut holdings = Vec::new();
@@ -50,12 +64,12 @@ pub async fn list_holdings(
         let conn = db.lock();
         query_holdings(
             &conn,
-            "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
-                    current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at, price_updated_at
+            &format!(
+                "SELECT {HOLDING_SELECT_COLS}
              FROM holdings
              WHERE portfolio_id = ?1
-             ORDER BY created_at ASC",
+             ORDER BY created_at ASC"
+            ),
             params![portfolio_id],
         )
     })
@@ -71,12 +85,9 @@ pub async fn get_holding(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
-        let mut stmt = conn.prepare(
-            "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
-                    current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at, price_updated_at
-             FROM holdings WHERE id = ?1",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {HOLDING_SELECT_COLS} FROM holdings WHERE id = ?1"
+        ))?;
         let mut rows = stmt.query_map(params![id], row_to_holding)?;
         match rows.next() {
             Some(row) => Ok(Some(row?)),
@@ -99,8 +110,8 @@ pub async fn create_holding(
         conn.execute(
             "INSERT INTO holdings (id, portfolio_id, symbol, name, asset_class, quantity,
                 average_price, current_price, currency, sector, region, broker,
-                as_of_date, notes, price_updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'))",
+                as_of_date, notes, price_updated_at, price_source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'), 'manual')",
             params![
                 id,
                 input.portfolio_id,
@@ -119,10 +130,7 @@ pub async fn create_holding(
             ],
         )?;
         let holding = conn.query_row(
-            "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
-                    current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at, price_updated_at
-             FROM holdings WHERE id = ?1",
+            &format!("SELECT {HOLDING_SELECT_COLS} FROM holdings WHERE id = ?1"),
             params![id],
             row_to_holding,
         )?;
@@ -143,18 +151,24 @@ pub async fn update_holding(
         let conn = db.lock();
 
         // Fetch existing holding first
-        let existing = conn.query_row(
-            "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
-                    current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at, price_updated_at
-             FROM holdings WHERE id = ?1",
-            params![id],
-            row_to_holding,
-        ).map_err(|_| CommandError::NotFound(format!("holding {id}")))?;
+        let existing = conn
+            .query_row(
+                &format!("SELECT {HOLDING_SELECT_COLS} FROM holdings WHERE id = ?1"),
+                params![id],
+                row_to_holding,
+            )
+            .map_err(|_| CommandError::NotFound(format!("holding {id}")))?;
 
         // Determine if price-related fields changed BEFORE consuming them.
-        let price_changed = input.current_price.map(|p| p != existing.current_price).unwrap_or(false);
-        let date_changed = input.as_of_date.as_deref().map(|d| d != existing.as_of_date).unwrap_or(false);
+        let price_changed = input
+            .current_price
+            .map(|p| p != existing.current_price)
+            .unwrap_or(false);
+        let date_changed = input
+            .as_of_date
+            .as_deref()
+            .map(|d| d != existing.as_of_date)
+            .unwrap_or(false);
         let refresh_price_ts = price_changed || date_changed;
 
         let symbol = input.symbol.unwrap_or(existing.symbol);
@@ -168,11 +182,32 @@ pub async fn update_holding(
         };
         let current_price = input.current_price.unwrap_or(existing.current_price);
         let currency = input.currency.unwrap_or(existing.currency);
-        let sector = if input.sector.is_some() { input.sector } else { existing.sector };
-        let region = if input.region.is_some() { input.region } else { existing.region };
-        let broker = if input.broker.is_some() { input.broker } else { existing.broker };
+        let sector = if input.sector.is_some() {
+            input.sector
+        } else {
+            existing.sector
+        };
+        let region = if input.region.is_some() {
+            input.region
+        } else {
+            existing.region
+        };
+        let broker = if input.broker.is_some() {
+            input.broker
+        } else {
+            existing.broker
+        };
         let as_of_date = input.as_of_date.unwrap_or(existing.as_of_date);
-        let notes = if input.notes.is_some() { input.notes } else { existing.notes };
+        let notes = if input.notes.is_some() {
+            input.notes
+        } else {
+            existing.notes
+        };
+        let provider_symbol = if input.provider_symbol.is_some() {
+            input.provider_symbol
+        } else {
+            existing.provider_symbol
+        };
 
         conn.execute(
             "UPDATE holdings SET
@@ -180,21 +215,33 @@ pub async fn update_holding(
                 average_price = ?5, current_price = ?6, currency = ?7,
                 sector = ?8, region = ?9, broker = ?10, as_of_date = ?11,
                 notes = ?12, updated_at = datetime('now'),
-                price_updated_at = CASE WHEN ?13 THEN datetime('now') ELSE price_updated_at END
-             WHERE id = ?14",
+                provider_symbol = ?13,
+                price_updated_at = CASE WHEN ?14 THEN datetime('now') ELSE price_updated_at END,
+                price_source = CASE WHEN ?14 THEN 'manual' ELSE price_source END,
+                price_refreshed_at = CASE WHEN ?14 THEN NULL ELSE price_refreshed_at END,
+                price_refresh_error = CASE WHEN ?14 THEN NULL ELSE price_refresh_error END
+             WHERE id = ?15",
             params![
-                symbol, name, asset_class, quantity,
-                average_price, current_price, currency,
-                sector, region, broker, as_of_date,
-                notes, refresh_price_ts, id,
+                symbol,
+                name,
+                asset_class,
+                quantity,
+                average_price,
+                current_price,
+                currency,
+                sector,
+                region,
+                broker,
+                as_of_date,
+                notes,
+                provider_symbol,
+                refresh_price_ts,
+                id,
             ],
         )?;
 
         let updated = conn.query_row(
-            "SELECT id, portfolio_id, symbol, name, asset_class, quantity, average_price,
-                    current_price, currency, sector, region, broker, as_of_date, notes,
-                    created_at, updated_at, price_updated_at
-             FROM holdings WHERE id = ?1",
+            &format!("SELECT {HOLDING_SELECT_COLS} FROM holdings WHERE id = ?1"),
             params![id],
             row_to_holding,
         )?;
@@ -239,6 +286,9 @@ pub async fn update_prices_bulk(
                     current_price = ?1,
                     as_of_date = ?2,
                     price_updated_at = datetime('now'),
+                    price_source = 'manual',
+                    price_refreshed_at = NULL,
+                    price_refresh_error = NULL,
                     updated_at = datetime('now')
                  WHERE id = ?3",
                 params![u.current_price, u.as_of_date, u.id],

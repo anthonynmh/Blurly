@@ -9,4 +9,5 @@ pub mod portfolio;
 pub mod settings;
 pub mod signing;
 pub mod snapshots;
+pub mod twelve_data;
 pub mod watchlist;
