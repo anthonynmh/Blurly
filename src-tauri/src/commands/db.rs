@@ -34,6 +34,7 @@ pub fn init_db(path: &Path) -> Result<Connection, CommandError> {
         M::up(include_str!(
             "../../migrations/007_price_refresh_metadata.sql"
         )),
+        M::up(include_str!("../../migrations/008_price_refresh_runs.sql")),
     ]);
 
     migrations.to_latest(&mut conn)?;

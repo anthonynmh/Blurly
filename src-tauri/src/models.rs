@@ -124,29 +124,23 @@ pub struct PriceRefreshInput {
     pub limit: i64,
 }
 
+/// Persisted state for a background Twelve Data refresh.
+/// The row is created when the user clicks Start, updated as the staggered loop
+/// processes each holding, and finalised when the loop ends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PriceRefreshItemResult {
+pub struct PriceRefreshRun {
     pub id: String,
-    pub symbol: String,
-    pub provider_symbol: String,
+    pub portfolio_id: String,
     pub status: String,
-    pub price: Option<f64>,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PriceRefreshRunResult {
-    pub attempted: i64,
-    pub updated: i64,
-    pub skipped: i64,
-    pub failed: i64,
-    pub requested_limit: i64,
-    pub credits_per_holding: i64,
-    pub estimated_credits_used: i64,
-    pub usage_before: Option<TwelveDataUsage>,
-    pub results: Vec<PriceRefreshItemResult>,
+    pub total_count: i64,
+    pub processed_count: i64,
+    pub succeeded_count: i64,
+    pub failed_count: i64,
+    pub current_symbol: Option<String>,
+    pub error_message: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

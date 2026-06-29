@@ -14,6 +14,9 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = commands::db::init_db(&dir.join("blurly.db"))?;
+            // Recover any price-refresh runs left in 'running' state by a prior
+            // session — otherwise the Holdings progress banner would hang forever.
+            commands::twelve_data::mark_orphaned_runs_failed(&conn)?;
             app.manage(commands::db::AppState {
                 db: Arc::new(Mutex::new(conn)),
                 data_dir: dir,
@@ -41,7 +44,9 @@ pub fn run() {
             commands::twelve_data::get_twelve_data_api_key_status,
             commands::twelve_data::test_twelve_data_api_key,
             commands::twelve_data::get_twelve_data_refresh_preview,
-            commands::twelve_data::refresh_prices_from_twelve_data,
+            commands::twelve_data::start_price_refresh,
+            commands::twelve_data::get_active_price_refresh_run,
+            commands::twelve_data::get_latest_price_refresh_run,
             commands::watchlist::list_watchlist,
             commands::watchlist::create_watchlist_item,
             commands::watchlist::update_watchlist_item,
