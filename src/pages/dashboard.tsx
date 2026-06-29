@@ -27,7 +27,7 @@ import {
   convertSummaryToDisplayCurrency,
   daysSince,
 } from '@/lib/calculations';
-import { formatCurrency, formatPercent } from '@/lib/formatters';
+import { formatCurrency, formatDateTime, formatPercent } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 
 const STALE_DISMISS_KEY = 'dashboard-stale-dismissed-count';
@@ -78,6 +78,8 @@ export default function DashboardPage() {
   const stalenessThreshold = settings?.stalenessThresholdDays ?? 7;
   const fxRate = settings?.fxUsdSgdRate ?? null;
   const fxAsOf = settings?.fxUsdSgdAsOf ?? null;
+  const fxRefreshedAt = settings?.fxUsdSgdRefreshedAt ?? null;
+  const showFxRefreshNote = settings?.fxUsdSgdSource === 'frankfurter' && fxRefreshedAt != null;
   const baseDashboardCcy = normalizeDashboardCurrency(baseCurrency);
   const fxToggleEnabled = fxRate != null;
 
@@ -210,6 +212,11 @@ export default function DashboardPage() {
                       FX rate is {fxDaysOld} days old
                     </TooltipContent>
                   </Tooltip>
+                )}
+                {showFxRefreshNote && (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    FX refreshed {formatDateTime(fxRefreshedAt)}
+                  </span>
                 )}
               </div>
             ) : (

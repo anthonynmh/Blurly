@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { HashRouter, Route, Routes } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { AppShell } from '@/components/app-shell';
 import DashboardPage from '@/pages/dashboard';
@@ -11,6 +12,7 @@ import AnalystPage from '@/pages/analyst';
 import AnalysisHistoryPage from '@/pages/analysis-history';
 import WatchlistPage from '@/pages/watchlist';
 import AiSettingsPage from '@/pages/ai-settings';
+import { settingsService } from '@/services/settings-service';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,9 +23,34 @@ const queryClient = new QueryClient({
   },
 });
 
+let hasAttemptedFxRefresh = false;
+
+function FxRateRefreshOnLaunch() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (hasAttemptedFxRefresh) {
+      return;
+    }
+    hasAttemptedFxRefresh = true;
+
+    void settingsService.refreshFxRate()
+      .then((settings) => {
+        queryClient.setQueryData(['settings'], settings);
+        void queryClient.invalidateQueries({ queryKey: ['settings'] });
+      })
+      .catch(() => {
+        // Launch should not depend on an external FX provider.
+      });
+  }, [queryClient]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <FxRateRefreshOnLaunch />
       <HashRouter>
         <Routes>
           <Route element={<AppShell />}>

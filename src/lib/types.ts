@@ -111,8 +111,10 @@ export interface Settings {
   fxUsdSgdRate?: number;
   /** Date the FX rate was last set (YYYY-MM-DD). */
   fxUsdSgdAsOf?: string;
-  /** Provenance: 'manual' (user-entered) or 'web_refresh' (future). */
+  /** Provenance: 'manual' (user-entered) or 'frankfurter'. */
   fxUsdSgdSource?: string;
+  /** Timestamp when Blurly last refreshed the FX rate from a web provider. */
+  fxUsdSgdRefreshedAt?: string;
   /** Days before a holding's price is flagged stale. Null → app default (7). */
   stalenessThresholdDays?: number;
   createdAt: string;

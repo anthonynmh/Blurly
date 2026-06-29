@@ -33,6 +33,27 @@ export function formatDate(dateStr: string): string {
 }
 
 /**
+ * Format a SQLite/ISO timestamp into a compact local date/time.
+ */
+export function formatDateTime(dateTimeStr: string): string {
+  const normalized = dateTimeStr.includes('T')
+    ? dateTimeStr
+    : `${dateTimeStr.replace(' ', 'T')}Z`;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) {
+    return dateTimeStr;
+  }
+
+  return d.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/**
  * Format a plain number with thousand-separators and fixed decimals.
  */
 export function formatNumber(value: number, decimals: number = 2): string {

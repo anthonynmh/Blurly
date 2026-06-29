@@ -94,15 +94,24 @@ export default function SettingsPage() {
     mutationFn: (values: SettingsFormValues) => {
       const fxRate = values.fxUsdSgdRate;
       const hasFxRate = fxRate != null;
+      const fxAsOf = hasFxRate ? (values.fxUsdSgdAsOf || null) : null;
+      const previousFxRate = settings?.fxUsdSgdRate ?? null;
+      const previousFxAsOf = settings?.fxUsdSgdAsOf ?? null;
+      const fxChanged = fxRate !== previousFxRate || fxAsOf !== previousFxAsOf;
+
       return settingsService.update({
         portfolioName: values.portfolioName,
         baseCurrency: values.baseCurrency,
         defaultCurrency: values.defaultCurrency,
         stalenessThresholdDays: values.stalenessThresholdDays,
         fxUsdSgdRate: hasFxRate ? fxRate : null,
-        fxUsdSgdAsOf: hasFxRate ? (values.fxUsdSgdAsOf || null) : null,
-        // Always set source to 'manual' when saving a rate from this form.
-        fxUsdSgdSource: hasFxRate ? 'manual' : null,
+        fxUsdSgdAsOf: fxAsOf,
+        fxUsdSgdSource: hasFxRate
+          ? (fxChanged ? 'manual' : (settings?.fxUsdSgdSource ?? null))
+          : null,
+        fxUsdSgdRefreshedAt: hasFxRate && !fxChanged
+          ? (settings?.fxUsdSgdRefreshedAt ?? null)
+          : null,
       });
     },
     onSuccess: () => {
@@ -275,8 +284,8 @@ export default function SettingsPage() {
                   <div />
                 </div>
                 <FormDescription>
-                  Manually maintained rate used for the Dashboard&apos;s USD↔SGD toggle.
-                  1 USD = N SGD.
+                  Refreshed from Frankfurter on launch; manual edits remain available as a
+                  fallback. 1 USD = N SGD.
                 </FormDescription>
                 {/* Show validation errors for either sub-field */}
                 {form.formState.errors.fxUsdSgdRate && (

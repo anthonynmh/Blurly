@@ -22,6 +22,10 @@ fn merge_settings(existing: Settings, input: UpdateSettings) -> Settings {
         fx_usd_sgd_rate: merge_nullable(input.fx_usd_sgd_rate, existing.fx_usd_sgd_rate),
         fx_usd_sgd_as_of: merge_nullable(input.fx_usd_sgd_as_of, existing.fx_usd_sgd_as_of),
         fx_usd_sgd_source: merge_nullable(input.fx_usd_sgd_source, existing.fx_usd_sgd_source),
+        fx_usd_sgd_refreshed_at: merge_nullable(
+            input.fx_usd_sgd_refreshed_at,
+            existing.fx_usd_sgd_refreshed_at,
+        ),
         staleness_threshold_days: input
             .staleness_threshold_days
             .or(existing.staleness_threshold_days),
@@ -38,9 +42,10 @@ fn row_to_settings(row: &rusqlite::Row<'_>) -> rusqlite::Result<Settings> {
         fx_usd_sgd_rate: row.get(3)?,
         fx_usd_sgd_as_of: row.get(4)?,
         fx_usd_sgd_source: row.get(5)?,
-        staleness_threshold_days: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        fx_usd_sgd_refreshed_at: row.get(6)?,
+        staleness_threshold_days: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
@@ -53,6 +58,7 @@ pub async fn get_settings(state: tauri::State<'_, AppState>) -> Result<Settings,
             .query_row(
                 "SELECT portfolio_name, base_currency, default_currency,
                     fx_usd_sgd_rate, fx_usd_sgd_as_of, fx_usd_sgd_source,
+                    fx_usd_sgd_refreshed_at,
                     staleness_threshold_days, created_at, updated_at
              FROM settings WHERE id = 1",
                 [],
@@ -79,6 +85,7 @@ pub async fn update_settings(
             .query_row(
                 "SELECT portfolio_name, base_currency, default_currency,
                     fx_usd_sgd_rate, fx_usd_sgd_as_of, fx_usd_sgd_source,
+                    fx_usd_sgd_refreshed_at,
                     staleness_threshold_days, created_at, updated_at
              FROM settings WHERE id = 1",
                 [],
@@ -96,7 +103,8 @@ pub async fn update_settings(
                 fx_usd_sgd_rate = ?4,
                 fx_usd_sgd_as_of = ?5,
                 fx_usd_sgd_source = ?6,
-                staleness_threshold_days = ?7,
+                fx_usd_sgd_refreshed_at = ?7,
+                staleness_threshold_days = ?8,
                 updated_at = datetime('now')
             WHERE id = 1",
             params![
@@ -106,6 +114,7 @@ pub async fn update_settings(
                 merged.fx_usd_sgd_rate,
                 merged.fx_usd_sgd_as_of,
                 merged.fx_usd_sgd_source,
+                merged.fx_usd_sgd_refreshed_at,
                 merged.staleness_threshold_days,
             ],
         )?;
@@ -113,6 +122,7 @@ pub async fn update_settings(
         let updated = conn.query_row(
             "SELECT portfolio_name, base_currency, default_currency,
                     fx_usd_sgd_rate, fx_usd_sgd_as_of, fx_usd_sgd_source,
+                    fx_usd_sgd_refreshed_at,
                     staleness_threshold_days, created_at, updated_at
              FROM settings WHERE id = 1",
             [],
@@ -137,6 +147,7 @@ mod tests {
             fx_usd_sgd_rate: Some(1.35),
             fx_usd_sgd_as_of: Some("2026-06-28".to_string()),
             fx_usd_sgd_source: Some("manual".to_string()),
+            fx_usd_sgd_refreshed_at: Some("2026-06-28 12:00:00".to_string()),
             staleness_threshold_days: Some(7),
             created_at: "2026-06-28T00:00:00Z".to_string(),
             updated_at: "2026-06-28T00:00:00Z".to_string(),
@@ -154,6 +165,7 @@ mod tests {
                 fx_usd_sgd_rate: None,
                 fx_usd_sgd_as_of: None,
                 fx_usd_sgd_source: None,
+                fx_usd_sgd_refreshed_at: None,
                 staleness_threshold_days: None,
             },
         );
@@ -162,6 +174,10 @@ mod tests {
         assert_eq!(merged.fx_usd_sgd_rate, Some(1.35));
         assert_eq!(merged.fx_usd_sgd_as_of.as_deref(), Some("2026-06-28"));
         assert_eq!(merged.fx_usd_sgd_source.as_deref(), Some("manual"));
+        assert_eq!(
+            merged.fx_usd_sgd_refreshed_at.as_deref(),
+            Some("2026-06-28 12:00:00")
+        );
     }
 
     #[test]
@@ -175,6 +191,7 @@ mod tests {
                 fx_usd_sgd_rate: Some(None),
                 fx_usd_sgd_as_of: Some(None),
                 fx_usd_sgd_source: Some(None),
+                fx_usd_sgd_refreshed_at: Some(None),
                 staleness_threshold_days: None,
             },
         );
@@ -182,5 +199,6 @@ mod tests {
         assert_eq!(merged.fx_usd_sgd_rate, None);
         assert_eq!(merged.fx_usd_sgd_as_of, None);
         assert_eq!(merged.fx_usd_sgd_source, None);
+        assert_eq!(merged.fx_usd_sgd_refreshed_at, None);
     }
 }
