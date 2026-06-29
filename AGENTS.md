@@ -18,6 +18,47 @@ pnpm signing:check            # verify the current signing state
 
 There is no JS linter configured. Rust side: `cargo fmt --manifest-path src-tauri/Cargo.toml` and `cargo clippy --manifest-path src-tauri/Cargo.toml`.
 
+## Dev flow
+
+Feature work uses the `dev` branch and PRs back into `main`.
+
+1. Start by grounding in the repo: read relevant files, inspect tests/config, and check `git status --short --branch`.
+2. Prepare `dev` from `origin/main`:
+   - `git fetch origin`
+   - if `dev` exists locally, checkout it and fast-forward it to `origin/main` when possible
+   - otherwise create it from `origin/main`
+3. Implement the accepted plan in focused changes. Keep commits logical: schema/backend, frontend, docs/release metadata, or other natural boundaries.
+4. QA before publishing. Usual checks are:
+   - `pnpm test`
+   - `pnpm build`
+   - `cargo clippy --manifest-path src-tauri/Cargo.toml`
+   - `cargo test --manifest-path src-tauri/Cargo.toml` when Rust behavior/tests changed
+5. Push `dev` and open or update a PR from `dev` into `main` with a concise summary and verification notes.
+
+Avoid committing unrelated formatter churn. If a formatter rewrites files outside the task, restore those unrelated files before committing. The reusable Codex skill for this process is `blurly-dev-flow`.
+
+## Local macOS release flow
+
+Use the dedicated `blurly-local-macos-release` skill when asked to bump the version and create a local signed + notarized macOS DMG.
+
+Release version bumps must update:
+
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/tauri.conf.json`
+- the `blurly` package entry in `src-tauri/Cargo.lock`
+
+The local DMG release flow is:
+
+```bash
+pnpm release:macos:dmg
+./scripts/with-env.sh xcrun notarytool submit src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_<ARCH>.dmg --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+xcrun stapler staple src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_<ARCH>.dmg
+pnpm release:macos:validate src-tauri/target/release/bundle/dmg/Blurly_<VERSION>_<ARCH>.dmg
+```
+
+Prerequisites are the Developer ID Application certificate configured in `tauri.conf.json` and repo-root `.env` values for `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`. If Tauri DMG bundling fails after leaving `/Volumes/Blurly` mounted, detach the stale mount with `hdiutil detach` and rerun the DMG build. Final handoff should include the DMG path, SHA-256 checksum, notarization IDs, stapling status, signing identity, and any uncommitted version files.
+
 ## Architecture
 
 Tauri 2 desktop app: React 18 + TS frontend (`src/`) over a Rust backend (`src-tauri/`). The IPC call chain is the spine of the app:
