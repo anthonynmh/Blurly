@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::ai::prompts::{focus_for, time_window_hint, BASE_PERSONA};
+use crate::ai::prompts::{focus_for, persona_suffix, time_window_hint, BASE_PERSONA};
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 
@@ -28,6 +28,8 @@ pub struct AnalysisRequest<'a> {
     pub web_search_enabled: bool,
     /// Already serialised AnalysisPortfolioContext JSON (built in TS).
     pub input_context_json: &'a str,
+    /// 'light' or 'deep' — controls the persona suffix appended to the system prompt.
+    pub persona: &'a str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -70,9 +72,10 @@ impl OpenAiProvider {
 
     pub async fn run_analysis(&self, key: &str, req: AnalysisRequest<'_>) -> Result<AnalysisOutput, String> {
         let system = format!(
-            "{}\n\n{}",
+            "{}\n\n{}\n\n{}",
             focus_for(req.analysis_type),
-            BASE_PERSONA
+            BASE_PERSONA,
+            persona_suffix(req.persona),
         );
         let user = format!(
             "{}\n\nAnalysis type: {}\n\nCurrent holdings context (JSON):\n{}",

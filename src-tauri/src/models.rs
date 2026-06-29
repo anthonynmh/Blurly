@@ -336,6 +336,8 @@ pub struct AnalysisRun {
     pub error_message: Option<String>,
     pub created_at: String,
     pub completed_at: Option<String>,
+    /// 'light' (gpt-4o) or 'deep' (gpt-5.5).
+    pub persona: String,
 }
 
 /// Input to `run_analysis` — JS sends the pre-built portfolio context plus run options.
@@ -346,6 +348,8 @@ pub struct RunAnalysisInput {
     pub input_context_json: String,
     pub analysis_type: String,
     pub time_window: String,
+    /// 'light' (gpt-4o, web search per saved setting) or 'deep' (gpt-5.5, web search forced).
+    pub persona: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
