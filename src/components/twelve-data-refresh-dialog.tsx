@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { AlertCircle, ExternalLink } from 'lucide-react';
 
 import {
   Dialog,
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { holdingService } from '@/services/holding-service';
-import type { PriceRefreshRunResult, TwelveDataUsage } from '@/lib/types';
+import type { TwelveDataUsage } from '@/lib/types';
 import { formatNumber } from '@/lib/formatters';
 
 interface TwelveDataRefreshDialogProps {
@@ -35,7 +35,6 @@ export function TwelveDataRefreshDialog({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [limit, setLimit] = useState(0);
-  const [lastRun, setLastRun] = useState<PriceRefreshRunResult | null>(null);
 
   const previewQuery = useQuery({
     queryKey: ['twelve-data-refresh-preview', portfolioId],
@@ -45,24 +44,19 @@ export function TwelveDataRefreshDialog({
   });
 
   useEffect(() => {
-    if (open) {
-      setLastRun(null);
-    }
-  }, [open]);
-
-  useEffect(() => {
     if (previewQuery.data) {
       setLimit(previewQuery.data.recommendedCount);
     }
   }, [previewQuery.data]);
 
-  const refreshMutation = useMutation({
-    mutationFn: () => holdingService.refreshPricesFromTwelveData({ portfolioId, limit }),
-    onSuccess: (result) => {
-      setLastRun(result);
-      void queryClient.invalidateQueries({ queryKey: ['holdings', portfolioId] });
-      void queryClient.invalidateQueries({ queryKey: ['twelve-data-refresh-preview', portfolioId] });
-      toast.success(`Updated ${result.updated} price${result.updated !== 1 ? 's' : ''}`);
+  const startMutation = useMutation({
+    mutationFn: () => holdingService.startPriceRefresh({ portfolioId, limit }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['active-price-refresh', portfolioId],
+      });
+      toast.success('Refresh started — you can close this and keep working.');
+      onOpenChange(false);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -70,7 +64,7 @@ export function TwelveDataRefreshDialog({
   const preview = previewQuery.data;
   const maxCount = preview?.maxCount ?? 0;
   const clampedLimit = Math.max(0, Math.min(limit, maxCount));
-  const canRefresh = !!preview?.hasKey && clampedLimit > 0 && !refreshMutation.isPending;
+  const canStart = !!preview?.hasKey && clampedLimit > 0 && !startMutation.isPending;
 
   function handleLimitChange(value: string) {
     const parsed = parseInt(value, 10);
@@ -81,18 +75,19 @@ export function TwelveDataRefreshDialog({
     setLimit(Math.max(0, Math.min(parsed, maxCount)));
   }
 
-  function goToSettings() {
+  function goToKeys() {
     onOpenChange(false);
-    navigate('/settings');
+    navigate('/keys');
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Refresh from Twelve Data</DialogTitle>
+          <DialogTitle>Auto-Refresh from Twelve Data</DialogTitle>
           <DialogDescription>
             Uses your saved Twelve Data key. Each eligible holding uses about one API credit.
+            The refresh runs in the background — you can close this dialog and keep working.
           </DialogDescription>
         </DialogHeader>
 
@@ -114,7 +109,7 @@ export function TwelveDataRefreshDialog({
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>No Twelve Data key saved</AlertTitle>
                 <AlertDescription>
-                  Save your own Twelve Data API key before refreshing prices from the web.
+                  Save your own Twelve Data API key in the Keys tab before refreshing prices.
                 </AlertDescription>
               </Alert>
             )}
@@ -150,7 +145,7 @@ export function TwelveDataRefreshDialog({
                     className="w-32"
                     value={clampedLimit}
                     onChange={(e) => handleLimitChange(e.target.value)}
-                    disabled={!preview.hasKey || maxCount === 0 || refreshMutation.isPending}
+                    disabled={!preview.hasKey || maxCount === 0 || startMutation.isPending}
                   />
                 </div>
                 <div className="pb-2 text-xs text-muted-foreground">
@@ -158,23 +153,23 @@ export function TwelveDataRefreshDialog({
                 </div>
               </div>
             </div>
-
-            {lastRun && <RunSummary result={lastRun} />}
           </div>
         ) : null}
 
         <DialogFooter className="gap-2 sm:gap-0">
           {preview && !preview.hasKey ? (
-            <Button onClick={goToSettings}>
+            <Button onClick={goToKeys}>
               <ExternalLink className="h-4 w-4" />
-              Open Settings
+              Open Keys
             </Button>
           ) : (
             <Button
-              onClick={() => refreshMutation.mutate()}
-              disabled={!canRefresh}
+              onClick={() => startMutation.mutate()}
+              disabled={!canStart}
             >
-              {refreshMutation.isPending ? 'Refreshing...' : `Refresh ${clampedLimit} holding${clampedLimit !== 1 ? 's' : ''}`}
+              {startMutation.isPending
+                ? 'Starting…'
+                : `Start refresh (${clampedLimit} holding${clampedLimit !== 1 ? 's' : ''})`}
             </Button>
           )}
         </DialogFooter>
@@ -253,33 +248,6 @@ function QuotaLine({
         <p className="text-xs text-muted-foreground">
           {formatNumber(remaining, 0)} remaining
         </p>
-      )}
-    </div>
-  );
-}
-
-function RunSummary({ result }: { result: PriceRefreshRunResult }) {
-  const failures = result.results.filter((r) => r.status === 'failed');
-
-  return (
-    <div className="space-y-3 rounded-md border p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <CheckCircle2 className="h-4 w-4 text-green-600" />
-        <p className="text-sm font-medium">
-          Updated {result.updated} of {result.attempted} attempted
-        </p>
-        <Badge variant="outline">
-          ~{result.estimatedCreditsUsed} credit{result.estimatedCreditsUsed !== 1 ? 's' : ''}
-        </Badge>
-      </div>
-      {failures.length > 0 && (
-        <div className="max-h-28 overflow-y-auto rounded border bg-muted/30 p-2">
-          {failures.map((failure) => (
-            <p key={failure.id} className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{failure.symbol}</span>: {failure.message}
-            </p>
-          ))}
-        </div>
       )}
     </div>
   );

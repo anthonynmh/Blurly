@@ -71,25 +71,20 @@ export interface PriceRefreshInput {
   limit: number;
 }
 
-export interface PriceRefreshItemResult {
-  id: string;
-  symbol: string;
-  providerSymbol: string;
-  status: string;
-  price?: number;
-  message?: string;
-}
+export type PriceRefreshRunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
 
-export interface PriceRefreshRunResult {
-  attempted: number;
-  updated: number;
-  skipped: number;
-  failed: number;
-  requestedLimit: number;
-  creditsPerHolding: number;
-  estimatedCreditsUsed: number;
-  usageBefore?: TwelveDataUsage;
-  results: PriceRefreshItemResult[];
+export interface PriceRefreshRun {
+  id: string;
+  portfolioId: string;
+  status: PriceRefreshRunStatus;
+  totalCount: number;
+  processedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  currentSymbol?: string;
+  errorMessage?: string;
+  startedAt: string;
+  completedAt?: string;
 }
 
 export interface HoldingWithComputedValues extends Holding {

@@ -5,7 +5,7 @@ import type {
   NewHolding,
   PriceRefreshInput,
   PriceRefreshPreview,
-  PriceRefreshRunResult,
+  PriceRefreshRun,
   UpdateHolding,
 } from '@/lib/types';
 
@@ -38,7 +38,18 @@ export const holdingService = {
     return invoke('get_twelve_data_refresh_preview', { portfolioId });
   },
 
-  refreshPricesFromTwelveData(input: PriceRefreshInput): Promise<PriceRefreshRunResult> {
-    return invoke('refresh_prices_from_twelve_data', { input });
+  /** Kicks off a background refresh and returns the new run id immediately. */
+  startPriceRefresh(input: PriceRefreshInput): Promise<string> {
+    return invoke('start_price_refresh', { input });
+  },
+
+  /** Returns the row whose status is 'running' for the portfolio, or null. */
+  getActivePriceRefreshRun(portfolioId: string): Promise<PriceRefreshRun | null> {
+    return invoke('get_active_price_refresh_run', { portfolioId });
+  },
+
+  /** Returns the most recent run row regardless of status. */
+  getLatestPriceRefreshRun(portfolioId: string): Promise<PriceRefreshRun | null> {
+    return invoke('get_latest_price_refresh_run', { portfolioId });
   },
 };
