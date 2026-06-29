@@ -267,6 +267,9 @@ export type TimeWindow = '7d' | '30d' | '90d' | '1y';
 
 export type AnalysisStatus = 'pending' | 'running' | 'succeeded' | 'failed';
 
+/** Light = gpt-4o; Deep = gpt-5.5 with web search forced on. */
+export type AnalystPersona = 'light' | 'deep';
+
 export interface AnalysisRun {
   id: string;
   analysisType: AnalysisType | string;
@@ -280,12 +283,14 @@ export interface AnalysisRun {
   errorMessage?: string;
   createdAt: string;
   completedAt?: string;
+  persona: AnalystPersona | string;
 }
 
 export interface RunAnalysisInput {
   inputContextJson: string;
   analysisType: AnalysisType;
   timeWindow: TimeWindow;
+  persona: AnalystPersona;
 }
 
 /** Privacy flags decide what shape of holding context goes to the model. */
