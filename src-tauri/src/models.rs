@@ -38,6 +38,10 @@ pub struct Holding {
     pub created_at: String,
     pub updated_at: String,
     pub price_updated_at: Option<String>,
+    pub price_source: Option<String>,
+    pub price_refreshed_at: Option<String>,
+    pub price_refresh_error: Option<String>,
+    pub provider_symbol: Option<String>,
 }
 
 /// Input for bulk price updates from the UpdatePricesDialog.
@@ -83,6 +87,66 @@ pub struct UpdateHolding {
     pub broker: Option<String>,
     pub as_of_date: Option<String>,
     pub notes: Option<String>,
+    pub provider_symbol: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Price refresh providers
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TwelveDataUsage {
+    pub current_usage: Option<i64>,
+    pub plan_limit: Option<i64>,
+    pub daily_usage: Option<i64>,
+    pub plan_daily_limit: Option<i64>,
+    pub plan_category: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PriceRefreshPreview {
+    pub has_key: bool,
+    pub eligible_count: i64,
+    pub skipped_count: i64,
+    pub recommended_count: i64,
+    pub max_count: i64,
+    pub credits_per_holding: i64,
+    pub usage: Option<TwelveDataUsage>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PriceRefreshInput {
+    pub portfolio_id: String,
+    pub limit: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PriceRefreshItemResult {
+    pub id: String,
+    pub symbol: String,
+    pub provider_symbol: String,
+    pub status: String,
+    pub price: Option<f64>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PriceRefreshRunResult {
+    pub attempted: i64,
+    pub updated: i64,
+    pub skipped: i64,
+    pub failed: i64,
+    pub requested_limit: i64,
+    pub credits_per_holding: i64,
+    pub estimated_credits_used: i64,
+    pub usage_before: Option<TwelveDataUsage>,
+    pub results: Vec<PriceRefreshItemResult>,
 }
 
 // ---------------------------------------------------------------------------

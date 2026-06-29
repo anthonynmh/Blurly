@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HoldingsTable } from '@/components/holdings-table';
 import { UpdatePricesDialog } from '@/components/update-prices-dialog';
+import { TwelveDataRefreshDialog } from '@/components/twelve-data-refresh-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { holdingService } from '@/services/holding-service';
 import { portfolioService } from '@/services/portfolio-service';
@@ -15,6 +16,7 @@ import type { HoldingWithComputedValues } from '@/lib/types';
 export default function HoldingsPage() {
   const navigate = useNavigate();
   const [updatePricesOpen, setUpdatePricesOpen] = useState(false);
+  const [webRefreshOpen, setWebRefreshOpen] = useState(false);
   const [selectedHoldingId, setSelectedHoldingId] = useState<string | null>(null);
 
   const { data: portfolio } = useQuery({
@@ -44,6 +46,10 @@ export default function HoldingsPage() {
           <Button variant="outline" onClick={() => openUpdatePrices()} disabled={holdingsWithValues.length === 0}>
             <RefreshCw className="h-4 w-4" />
             Update Prices
+          </Button>
+          <Button variant="outline" onClick={() => setWebRefreshOpen(true)} disabled={holdingsWithValues.length === 0}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh from Web
           </Button>
           <Button onClick={() => navigate('/holdings/add')}>
             <Plus className="h-4 w-4" />
@@ -78,6 +84,11 @@ export default function HoldingsPage() {
         }}
         holdings={holdingsWithValues}
         initialHoldingId={selectedHoldingId}
+      />
+      <TwelveDataRefreshDialog
+        open={webRefreshOpen}
+        onOpenChange={setWebRefreshOpen}
+        portfolioId="default"
       />
     </div>
   );

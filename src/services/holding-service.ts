@@ -1,5 +1,13 @@
 import { invoke } from '@/lib/invoke';
-import type { BulkPriceUpdate, Holding, NewHolding, UpdateHolding } from '@/lib/types';
+import type {
+  BulkPriceUpdate,
+  Holding,
+  NewHolding,
+  PriceRefreshInput,
+  PriceRefreshPreview,
+  PriceRefreshRunResult,
+  UpdateHolding,
+} from '@/lib/types';
 
 export const holdingService = {
   list(portfolioId: string): Promise<Holding[]> {
@@ -24,5 +32,13 @@ export const holdingService = {
 
   updatePricesBulk(updates: BulkPriceUpdate[]): Promise<void> {
     return invoke('update_prices_bulk', { updates });
+  },
+
+  getTwelveDataRefreshPreview(portfolioId: string): Promise<PriceRefreshPreview> {
+    return invoke('get_twelve_data_refresh_preview', { portfolioId });
+  },
+
+  refreshPricesFromTwelveData(input: PriceRefreshInput): Promise<PriceRefreshRunResult> {
+    return invoke('refresh_prices_from_twelve_data', { input });
   },
 };

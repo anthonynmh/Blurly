@@ -34,10 +34,63 @@ export interface Holding {
   updatedAt: string;
   /** ISO-8601 timestamp set whenever current_price or as_of_date changes. */
   priceUpdatedAt?: string;
+  /** Provenance for the valuation price, e.g. manual or twelvedata. */
+  priceSource?: string;
+  /** Timestamp when a market-data provider last attempted to refresh this price. */
+  priceRefreshedAt?: string;
+  /** Last provider refresh error, if any. */
+  priceRefreshError?: string;
+  /** Optional provider-specific symbol override. */
+  providerSymbol?: string;
 }
 
 export type NewHolding = Omit<Holding, 'id' | 'createdAt' | 'updatedAt'>;
 export type UpdateHolding = Partial<NewHolding>;
+
+export interface TwelveDataUsage {
+  currentUsage?: number;
+  planLimit?: number;
+  dailyUsage?: number;
+  planDailyLimit?: number;
+  planCategory?: string;
+}
+
+export interface PriceRefreshPreview {
+  hasKey: boolean;
+  eligibleCount: number;
+  skippedCount: number;
+  recommendedCount: number;
+  maxCount: number;
+  creditsPerHolding: number;
+  usage?: TwelveDataUsage;
+  message?: string;
+}
+
+export interface PriceRefreshInput {
+  portfolioId: string;
+  limit: number;
+}
+
+export interface PriceRefreshItemResult {
+  id: string;
+  symbol: string;
+  providerSymbol: string;
+  status: string;
+  price?: number;
+  message?: string;
+}
+
+export interface PriceRefreshRunResult {
+  attempted: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  requestedLimit: number;
+  creditsPerHolding: number;
+  estimatedCreditsUsed: number;
+  usageBefore?: TwelveDataUsage;
+  results: PriceRefreshItemResult[];
+}
 
 export interface HoldingWithComputedValues extends Holding {
   /** quantity × currentPrice */
