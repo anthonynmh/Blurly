@@ -2,6 +2,7 @@ pub mod ai_keys;
 pub mod ai_settings;
 pub mod analysis;
 pub mod db;
+pub mod fx;
 pub mod holdings;
 pub mod key_store;
 pub mod portfolio;

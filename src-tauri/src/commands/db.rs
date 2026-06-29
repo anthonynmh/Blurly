@@ -30,6 +30,7 @@ pub fn init_db(path: &Path) -> Result<Connection, CommandError> {
         M::up(include_str!("../../migrations/003_key_signing.sql")),
         M::up(include_str!("../../migrations/004_price_updated_at.sql")),
         M::up(include_str!("../../migrations/005_fx_settings.sql")),
+        M::up(include_str!("../../migrations/006_fx_refreshed_at.sql")),
     ]);
 
     migrations.to_latest(&mut conn)?;

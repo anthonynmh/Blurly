@@ -35,6 +35,7 @@ pub fn run() {
             commands::snapshots::delete_snapshot,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::fx::refresh_fx_rate,
             commands::watchlist::list_watchlist,
             commands::watchlist::create_watchlist_item,
             commands::watchlist::update_watchlist_item,

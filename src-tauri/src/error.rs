@@ -19,6 +19,9 @@ pub enum CommandError {
 
     #[error("Storage error: {0}")]
     Storage(String),
+
+    #[error("Network error: {0}")]
+    Network(String),
 }
 
 // Tauri commands require the error type to be serializable
