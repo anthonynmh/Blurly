@@ -1,4 +1,4 @@
-//! OpenAI provider. Uses the **Responses API** with the `web_search_preview`
+//! OpenAI provider. Uses the **Responses API** with the `web_search`
 //! tool when web search is enabled. All OpenAI-specific shapes stay in this file
 //! so swapping in another provider only touches one module.
 
@@ -67,10 +67,17 @@ impl OpenAiProvider {
         }
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        Err(format!("OpenAI {status}: {}", body.chars().take(300).collect::<String>()))
+        Err(format!(
+            "OpenAI {status}: {}",
+            body.chars().take(300).collect::<String>()
+        ))
     }
 
-    pub async fn run_analysis(&self, key: &str, req: AnalysisRequest<'_>) -> Result<AnalysisOutput, String> {
+    pub async fn run_analysis(
+        &self,
+        key: &str,
+        req: AnalysisRequest<'_>,
+    ) -> Result<AnalysisOutput, String> {
         let system = format!(
             "{}\n\n{}\n\n{}",
             focus_for(req.analysis_type),
@@ -92,7 +99,10 @@ impl OpenAiProvider {
             ],
         });
         if req.web_search_enabled {
-            body["tools"] = json!([{ "type": "web_search_preview" }]);
+            body["tools"] = json!([{ "type": "web_search" }]);
+        }
+        if req.persona == "deep" {
+            body["reasoning"] = json!({ "effort": "high" });
         }
 
         let res = http_client(90)
@@ -106,7 +116,10 @@ impl OpenAiProvider {
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
-            return Err(format!("OpenAI {status}: {}", body.chars().take(500).collect::<String>()));
+            return Err(format!(
+                "OpenAI {status}: {}",
+                body.chars().take(500).collect::<String>()
+            ));
         }
 
         let payload: Value = res.json().await.map_err(|e| format!("Bad JSON: {e}"))?;
@@ -134,9 +147,15 @@ fn parse_responses_payload(v: &Value) -> AnalysisOutput {
             if item.get("type").and_then(|t| t.as_str()) != Some("message") {
                 continue;
             }
-            let Some(content) = item.get("content").and_then(|c| c.as_array()) else { continue };
+            let Some(content) = item.get("content").and_then(|c| c.as_array()) else {
+                continue;
+            };
             for part in content {
-                if part.get("type").and_then(|t| t.as_str()).is_some_and(|t| t.contains("text")) {
+                if part
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| t.contains("text"))
+                {
                     if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                         if !markdown.is_empty() {
                             markdown.push_str("\n\n");
@@ -146,8 +165,12 @@ fn parse_responses_payload(v: &Value) -> AnalysisOutput {
                     if let Some(anns) = part.get("annotations").and_then(|a| a.as_array()) {
                         for a in anns {
                             if let Some(url) = a.get("url").and_then(|u| u.as_str()) {
-                                let title = a.get("title").and_then(|t| t.as_str()).map(String::from);
-                                sources.push(Source { title, url: url.to_string() });
+                                let title =
+                                    a.get("title").and_then(|t| t.as_str()).map(String::from);
+                                sources.push(Source {
+                                    title,
+                                    url: url.to_string(),
+                                });
                             }
                         }
                     }
