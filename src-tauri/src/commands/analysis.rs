@@ -4,7 +4,10 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::ai::openai::{AnalysisRequest, OpenAiProvider};
+use crate::ai::openai::{
+    merge_qa_reports, validate_memo_contract, AnalysisOutput, AnalysisQaIssue, AnalysisQaReport,
+    AnalysisRequest, OpenAiProvider,
+};
 use crate::commands::ai_keys::read_key;
 use crate::commands::ai_settings;
 use crate::commands::db::AppState;
@@ -168,28 +171,66 @@ pub async fn run_analysis(
     };
 
     // 3. Call the provider on the async runtime (reqwest is async).
+    let provider = OpenAiProvider;
+    let analysis_request = AnalysisRequest {
+        model: &model,
+        analysis_type: &input.analysis_type,
+        time_window: &input.time_window,
+        web_search_enabled,
+        input_context_json: &input.input_context_json,
+        persona: &persona,
+    };
     let provider_result = match provider_id.as_str() {
-        "openai" => {
-            OpenAiProvider
-                .run_analysis(
-                    &key,
-                    AnalysisRequest {
-                        model: &model,
-                        analysis_type: &input.analysis_type,
-                        time_window: &input.time_window,
-                        web_search_enabled,
-                        input_context_json: &input.input_context_json,
-                        persona: &persona,
-                    },
-                )
-                .await
-        }
+        "openai" => provider.run_analysis(&key, analysis_request.clone()).await,
         other => Err(format!("Unknown provider: {other}")),
     };
 
     // 4. Persist outcome.
     match provider_result {
-        Ok(out) => finalise_success(&state, &run_id, &out.markdown, &out.sources).await,
+        Ok(out) => {
+            let deterministic_report = validate_memo_contract(
+                &out.markdown,
+                web_search_enabled,
+                &input.input_context_json,
+                &out.sources,
+            );
+            let qa_report = match provider_id.as_str() {
+                "openai" => match provider.run_qa_review(&key, &analysis_request, &out).await {
+                    Ok(model_report) => merge_qa_reports(model_report, deterministic_report),
+                    Err(e) => merge_qa_reports(
+                        AnalysisQaReport {
+                            pass: false,
+                            issues: vec![AnalysisQaIssue {
+                                code: "qa_agent_error".to_string(),
+                                severity: "error".to_string(),
+                                section: "QA".to_string(),
+                                message: e,
+                            }],
+                            missing_sections: Vec::new(),
+                            summary: "QA agent failed before it could verify the memo.".to_string(),
+                        },
+                        deterministic_report,
+                    ),
+                },
+                other => AnalysisQaReport {
+                    pass: false,
+                    issues: vec![AnalysisQaIssue {
+                        code: "unknown_provider_for_qa".to_string(),
+                        severity: "error".to_string(),
+                        section: "QA".to_string(),
+                        message: format!("Unknown provider for QA: {other}"),
+                    }],
+                    missing_sections: Vec::new(),
+                    summary: "QA could not run for the selected provider.".to_string(),
+                },
+            };
+
+            if qa_report.pass {
+                finalise_success(&state, &run_id, &out.markdown, &out.sources).await
+            } else {
+                finalise_qa_failure(&state, &run_id, &out, &qa_report).await
+            }
+        }
         Err(e) => finalise_failure(&state, &run_id, &e).await,
     }
 }
@@ -253,4 +294,56 @@ async fn finalise_failure(
     })
     .await
     .map_err(|e| CommandError::Join(e.to_string()))?
+}
+
+async fn finalise_qa_failure(
+    state: &tauri::State<'_, AppState>,
+    id: &str,
+    output: &AnalysisOutput,
+    qa_report: &AnalysisQaReport,
+) -> Result<AnalysisRun, CommandError> {
+    let db = Arc::clone(&state.db);
+    let id = id.to_string();
+    let error = qa_failure_message(qa_report);
+    let sources_json = serde_json::to_string(&output.sources)?;
+    let output_json = serde_json::to_string(&serde_json::json!({
+        "draftMarkdown": &output.markdown,
+        "qa": qa_report,
+    }))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.lock();
+        conn.execute(
+            "UPDATE analysis_runs SET
+                status = 'failed',
+                output_json = ?1,
+                sources_json = ?2,
+                error_message = ?3,
+                completed_at = datetime('now')
+             WHERE id = ?4",
+            params![output_json, sources_json, error, id],
+        )?;
+        let run = conn.query_row(
+            &format!("{SELECT_COLS} WHERE id = ?1"),
+            params![id],
+            row_to_run,
+        )?;
+        Ok(run)
+    })
+    .await
+    .map_err(|e| CommandError::Join(e.to_string()))?
+}
+
+fn qa_failure_message(qa_report: &AnalysisQaReport) -> String {
+    let first_issue = qa_report
+        .issues
+        .first()
+        .map(|i| format!("{}: {}", i.section, i.message));
+    match first_issue {
+        Some(issue) => format!("Analysis failed QA: {issue}"),
+        None if !qa_report.missing_sections.is_empty() => format!(
+            "Analysis failed QA: missing or misordered sections: {}",
+            qa_report.missing_sections.join(", ")
+        ),
+        None => "Analysis failed QA.".to_string(),
+    }
 }
