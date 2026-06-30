@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "blurly"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "blake3",
  "chacha20poly1305",
