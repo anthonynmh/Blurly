@@ -15,16 +15,39 @@ if [[ -z "$DMG_PATH" || ! -f "$DMG_PATH" ]]; then
   exit 1
 fi
 
+# Strip the column padding hdiutil applies to its tab-separated output. Without
+# this, $1 ends up like "/dev/disk12s1       " (trailing spaces) and the trap's
+# `hdiutil detach "$DEVICE"` fails with "No such file or directory", leaving
+# stale `/Volumes/Blurly` mounts to accumulate across runs.
+trim_whitespace() {
+  local value="$1"
+  # shellcheck disable=SC2001
+  printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# Stale-volume hygiene: previous failed runs may have left `/Volumes/Blurly`,
+# `/Volumes/Blurly 1`, ... still mounted. Detach all of them before mounting a
+# fresh copy so codesign and stapler validate read the DMG we actually attached.
+PRODUCT_NAME="$(node -p "require('$ROOT_DIR/src-tauri/tauri.conf.json').productName")"
+detach_stale_volumes() {
+  for v in /Volumes/"$PRODUCT_NAME"*; do
+    [[ -d "$v" ]] || continue
+    echo "Detaching stale mount: $v"
+    hdiutil detach -force "$v" >/dev/null 2>&1 || diskutil unmount force "$v" >/dev/null 2>&1 || true
+  done
+}
+detach_stale_volumes
+
 echo "Validating DMG: $DMG_PATH"
 hdiutil imageinfo "$DMG_PATH" >/dev/null
 
 ATTACH_OUTPUT="$(hdiutil attach "$DMG_PATH" -readonly -nobrowse)"
-DEVICE="$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' 'NF >= 3 { device=$1 } END { print device }')"
-MOUNT_POINT="$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' 'NF >= 3 { mount=$3 } END { print mount }')"
+DEVICE="$(trim_whitespace "$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' 'NF >= 3 { device=$1 } END { print device }')")"
+MOUNT_POINT="$(trim_whitespace "$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' 'NF >= 3 { mount=$3 } END { print mount }')")"
 
 cleanup() {
   if [[ -n "${DEVICE:-}" ]]; then
-    hdiutil detach "$DEVICE" >/dev/null
+    hdiutil detach "$DEVICE" >/dev/null 2>&1 || hdiutil detach -force "$DEVICE" >/dev/null 2>&1 || true
   fi
 }
 
@@ -49,12 +72,21 @@ xcrun stapler validate "$DMG_PATH"
 
 EXPECTED_TEAM="D4NKPP62S5"
 EXPECTED_AUTHORITY="Developer ID Application: Anthony Neo (D4NKPP62S5)"
-if ! codesign -dvv "$APP_PATH" 2>&1 | grep -q "^TeamIdentifier=${EXPECTED_TEAM}$"; then
-  echo "FAIL: TeamIdentifier mismatch — expected ${EXPECTED_TEAM}" >&2
+
+# Extract the actual values and compare as plain strings. This decouples the
+# check from regex anchoring and pipefail interactions that previously made
+# `grep -q` fail intermittently, and the failure message includes the actual
+# value so the next agent can act on it without re-running codesign by hand.
+CODESIGN_OUTPUT="$(codesign -dvv "$APP_PATH" 2>&1)"
+ACTUAL_TEAM="$(printf '%s\n' "$CODESIGN_OUTPUT" | awk -F= '/^TeamIdentifier=/ { print $2; exit }')"
+if [[ "$ACTUAL_TEAM" != "$EXPECTED_TEAM" ]]; then
+  echo "FAIL: TeamIdentifier mismatch — expected '${EXPECTED_TEAM}', got '${ACTUAL_TEAM}'" >&2
   exit 1
 fi
-if ! codesign -dvv "$APP_PATH" 2>&1 | grep -q "^Authority=${EXPECTED_AUTHORITY}$"; then
-  echo "FAIL: Authority mismatch — expected ${EXPECTED_AUTHORITY}" >&2
+
+ACTUAL_AUTHORITY="$(printf '%s\n' "$CODESIGN_OUTPUT" | awk -F= '/^Authority=/ { print $2; exit }')"
+if [[ "$ACTUAL_AUTHORITY" != "$EXPECTED_AUTHORITY" ]]; then
+  echo "FAIL: Authority mismatch — expected '${EXPECTED_AUTHORITY}', got '${ACTUAL_AUTHORITY}'" >&2
   exit 1
 fi
 echo "Signing identity OK: ${EXPECTED_AUTHORITY}"
