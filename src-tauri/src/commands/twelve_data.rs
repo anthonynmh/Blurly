@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Local, Utc};
+use chrono::Local;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
