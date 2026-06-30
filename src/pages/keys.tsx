@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,23 +21,12 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { WindowsNotReadyBanner } from '@/components/windows-not-ready-banner';
 import { aiKeysService } from '@/services/ai-keys-service';
 import { aiSettingsService } from '@/services/ai-settings-service';
+import { twelveDataService } from '@/services/twelve-data-service';
 import { isWindows } from '@/lib/platform';
 import type { ApiKeyStatus } from '@/lib/types';
-
-const settingsSchema = z.object({
-  provider: z.string().min(1),
-  model: z.string().min(1, 'Model is required'),
-  webSearchEnabled: z.boolean(),
-  includeExactValues: z.boolean(),
-  includeQuantities: z.boolean(),
-  includeNotes: z.boolean(),
-});
-
-type SettingsFormValues = z.infer<typeof settingsSchema>;
 
 const keySchema = z.object({
   apiKey: z.string().min(8, 'API key looks too short'),
@@ -45,204 +34,30 @@ const keySchema = z.object({
 
 type KeyFormValues = z.infer<typeof keySchema>;
 
-export default function AiSettingsPage() {
-  const queryClient = useQueryClient();
+export default function KeysPage() {
   const windowsBlocked = isWindows();
 
-  const { data: settings, isLoading } = useQuery({
-    queryKey: ['ai-settings'],
-    queryFn: () => aiSettingsService.get(),
-  });
-
-  const form = useForm<SettingsFormValues>({
-    resolver: zodResolver(settingsSchema),
-    defaultValues: {
-      provider: 'openai',
-      model: 'gpt-4o',
-      webSearchEnabled: true,
-      includeExactValues: false,
-      includeQuantities: false,
-      includeNotes: false,
-    },
-  });
-
-  useEffect(() => {
-    if (settings) {
-      form.reset({
-        provider: settings.provider,
-        model: settings.model,
-        webSearchEnabled: settings.webSearchEnabled,
-        includeExactValues: settings.includeExactValues,
-        includeQuantities: settings.includeQuantities,
-        includeNotes: settings.includeNotes,
-      });
-    }
-  }, [settings, form]);
-
-  const saveSettings = useMutation({
-    mutationFn: (values: SettingsFormValues) => aiSettingsService.update(values),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
-      toast.success('AI settings saved');
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <h1 className="text-2xl font-bold">AI Settings</h1>
-        <Skeleton className="h-64" />
-      </div>
-    );
-  }
-
-  const provider = form.watch('provider');
-
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="space-y-6">
       <WindowsNotReadyBanner />
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">AI Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Keys</h1>
         <p className="text-sm text-muted-foreground">
-          Bring your own API key. Keys are stored encrypted in Blurly&apos;s app data directory — never in the database, never sent anywhere except the provider.
+          Bring your own keys. Stored encrypted on this machine — never in the database, never sent anywhere except the provider.
         </p>
       </div>
 
-      <ApiKeyCard provider={provider} disabled={windowsBlocked} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider &amp; model</CardTitle>
-          <CardDescription>Only OpenAI is supported in this phase.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit((v) => saveSettings.mutate(v))}
-              className="space-y-5"
-            >
-              <FormField
-                control={form.control}
-                name="provider"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Provider</FormLabel>
-                    <FormControl>
-                      <Input {...field} disabled />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="model"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Model</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="gpt-4o" />
-                    </FormControl>
-                    <FormDescription>
-                      Use a model that supports the Responses API and web search (e.g. <code>gpt-4o</code>).
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="webSearchEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel>Enable web search</FormLabel>
-                      <FormDescription>
-                        Lets the analyst look up recent news and developments relevant to your holdings.
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium">Privacy — what gets sent to the AI</h3>
-                <p className="text-xs text-muted-foreground">
-                  Symbols, asset classes, and portfolio weights are always included. The toggles below add more detail.
-                  Off by default for privacy.
-                </p>
-                <PrivacyToggle
-                  form={form}
-                  name="includeExactValues"
-                  label="Include exact market values"
-                  description="Sends dollar amounts and total portfolio value to the AI."
-                />
-                <PrivacyToggle
-                  form={form}
-                  name="includeQuantities"
-                  label="Include quantities"
-                  description="Sends share/unit counts for each holding."
-                />
-                <PrivacyToggle
-                  form={form}
-                  name="includeNotes"
-                  label="Include notes"
-                  description="Sends your personal notes for each holding."
-                />
-              </div>
-
-              <Button type="submit" disabled={saveSettings.isPending}>
-                {saveSettings.isPending ? 'Saving…' : 'Save settings'}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+      <OpenAiKeyCard disabled={windowsBlocked} />
+      <TwelveDataKeyCard />
     </div>
   );
 }
 
-type PrivacyFormProps = {
-  form: ReturnType<typeof useForm<SettingsFormValues>>;
-  name: 'includeExactValues' | 'includeQuantities' | 'includeNotes';
-  label: string;
-  description: string;
-};
-
-function PrivacyToggle({ form, name, label, description }: PrivacyFormProps) {
-  return (
-    <FormField
-      control={form.control}
-      name={name}
-      render={({ field }) => (
-        <FormItem className="flex flex-row items-start justify-between rounded-lg border p-3">
-          <div className="space-y-0.5">
-            <FormLabel>{label}</FormLabel>
-            <FormDescription className="text-xs">{description}</FormDescription>
-          </div>
-          <FormControl>
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
-          </FormControl>
-        </FormItem>
-      )}
-    />
-  );
-}
-
-interface ApiKeyCardProps {
-  provider: string;
-  disabled: boolean;
-}
-
-function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
+function OpenAiKeyCard({ disabled }: { disabled: boolean }) {
   const queryClient = useQueryClient();
   const [testing, setTesting] = useState(false);
+  const provider = 'openai';
   const statusQueryKey = ['ai-key-status', provider] as const;
 
   const { data: keyStatus, error: keyStatusError } = useQuery({
@@ -266,7 +81,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   const typedKeyValid = (typedKey ?? '').trim().length >= 8;
   const hasSavedKey = keyStatus?.status === 'saved';
   const isStaleKey = keyStatus?.status === 'stale';
-  const statusMeta = keyStatus ? getApiKeyStatusMeta(keyStatus) : null;
+  const statusMeta = keyStatus ? getOpenAiKeyStatusMeta(keyStatus) : null;
 
   const saveKey = useMutation({
     mutationFn: (values: KeyFormValues) => aiKeysService.set(provider, values.apiKey),
@@ -275,7 +90,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
       void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
       void queryClient.invalidateQueries({ queryKey: statusQueryKey });
       keyForm.reset({ apiKey: '' });
-      toast.success('API key saved');
+      toast.success('OpenAI key saved');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -285,7 +100,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: statusQueryKey });
       void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
-      toast.success('API key removed');
+      toast.success('OpenAI key removed');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -313,7 +128,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <KeyRound className="h-4 w-4" />
-          API key
+          OpenAI
           {hasSavedKey && (
             <Badge variant="secondary" className="ml-2 text-xs">
               <CheckCircle2 className="h-3 w-3" /> Connected
@@ -321,7 +136,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
           )}
         </CardTitle>
         <CardDescription>
-          Keys are encrypted at rest with ChaCha20-Poly1305 (key derived per-machine) and only read when running analysis. They are never sent anywhere except the provider.
+          Used by the Analyst. Encrypted at rest with ChaCha20-Poly1305 (key derived per-machine) and only read when running analysis.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -376,8 +191,7 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
                     />
                   </FormControl>
                   <FormDescription>
-                    For OpenAI, paste a key from{' '}
-                    <code>platform.openai.com → API keys</code>. You can test it before saving.
+                    Paste a key from <code>platform.openai.com → API keys</code>. You can test it before saving.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -421,7 +235,135 @@ function ApiKeyCard({ provider, disabled }: ApiKeyCardProps) {
   );
 }
 
-function getApiKeyStatusMeta(status: ApiKeyStatus): {
+function TwelveDataKeyCard() {
+  const queryClient = useQueryClient();
+  const [apiKey, setApiKey] = useState('');
+  const [testing, setTesting] = useState(false);
+  const typedKeyValid = apiKey.trim().length >= 8;
+  const statusQueryKey = ['twelve-data-key-status'] as const;
+
+  const { data: keyStatus } = useQuery({
+    queryKey: statusQueryKey,
+    queryFn: () => twelveDataService.keyStatus(),
+    retry: false,
+  });
+
+  const hasSavedKey = keyStatus?.status === 'saved';
+  const statusMeta = getTwelveDataKeyStatusMeta(keyStatus);
+
+  const saveKey = useMutation({
+    mutationFn: () => twelveDataService.setKey(apiKey),
+    onSuccess: (status) => {
+      queryClient.setQueryData(statusQueryKey, status);
+      void queryClient.invalidateQueries({ queryKey: statusQueryKey });
+      setApiKey('');
+      toast.success('Twelve Data key saved');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteKey = useMutation({
+    mutationFn: () => twelveDataService.deleteKey(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: statusQueryKey });
+      toast.success('Twelve Data key removed');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  async function handleTest() {
+    if (!typedKeyValid) return;
+    setTesting(true);
+    try {
+      const result = await twelveDataService.testKey(apiKey);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4" />
+          Twelve Data
+          {hasSavedKey && (
+            <Badge variant="secondary" className="ml-2 text-xs">
+              <CheckCircle2 className="h-3 w-3" /> Connected
+            </Badge>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Used by the Auto-Refresh action on Holdings. Encrypted at rest in local app data.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className={statusMeta.containerClass}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{statusMeta.title}</p>
+              <p className="text-sm text-muted-foreground">{statusMeta.description}</p>
+            </div>
+            <Badge variant={statusMeta.badgeVariant}>{statusMeta.badgeLabel}</Badge>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="twelve-data-key">
+            {hasSavedKey ? 'Replace key' : 'Enter key'}
+          </label>
+          <Input
+            id="twelve-data-key"
+            type="password"
+            placeholder="Twelve Data API key"
+            value={apiKey}
+            autoComplete="off"
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Test validates the typed key only. Save is required before auto-refresh can run.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTest}
+            disabled={testing || !typedKeyValid}
+          >
+            {testing ? 'Testing...' : 'Test connection'}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => saveKey.mutate()}
+            disabled={saveKey.isPending || !typedKeyValid}
+          >
+            {saveKey.isPending ? 'Saving...' : hasSavedKey ? 'Replace saved key' : 'Save key'}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => deleteKey.mutate()}
+            disabled={deleteKey.isPending}
+          >
+            <Trash2 className="h-4 w-4" />
+            {hasSavedKey ? 'Remove saved key' : 'Clear saved key'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getOpenAiKeyStatusMeta(status: ApiKeyStatus): {
   title: string;
   description: string;
   badgeLabel: string;
@@ -432,7 +374,7 @@ function getApiKeyStatusMeta(status: ApiKeyStatus): {
     case 'saved':
       return {
         title: 'Key saved',
-        description: 'Blurly can decrypt the saved key for the active provider. Analyst is allowed to use it.',
+        description: 'Blurly can decrypt the saved key for OpenAI. Analyst is allowed to use it.',
         badgeLabel: 'Saved',
         badgeVariant: 'secondary',
         containerClass: 'space-y-3 rounded-md border bg-muted/30 p-3',
@@ -457,7 +399,43 @@ function getApiKeyStatusMeta(status: ApiKeyStatus): {
     default:
       return {
         title: 'No key saved',
-        description: 'No readable key is currently saved for the active provider.',
+        description: 'No readable key is currently saved for OpenAI.',
+        badgeLabel: 'Missing',
+        badgeVariant: 'outline',
+        containerClass: 'space-y-3 rounded-md border border-dashed p-3',
+      };
+  }
+}
+
+function getTwelveDataKeyStatusMeta(status?: ApiKeyStatus): {
+  title: string;
+  description: string;
+  badgeLabel: string;
+  badgeVariant: 'secondary' | 'outline' | 'destructive';
+  containerClass: string;
+} {
+  switch (status?.status) {
+    case 'saved':
+      return {
+        title: 'Key saved',
+        description: 'Blurly can decrypt the saved Twelve Data key for price refreshes.',
+        badgeLabel: 'Saved',
+        badgeVariant: 'secondary',
+        containerClass: 'space-y-3 rounded-md border bg-muted/30 p-3',
+      };
+    case 'error':
+      return {
+        title: 'Saved key unreadable',
+        description: status.message ?? 'Blurly could not decrypt the saved Twelve Data key. Clear and re-save it.',
+        badgeLabel: 'Error',
+        badgeVariant: 'destructive',
+        containerClass: 'space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-3',
+      };
+    case 'missing':
+    default:
+      return {
+        title: 'No key saved',
+        description: 'Save a Twelve Data key before using auto-refresh.',
         badgeLabel: 'Missing',
         badgeVariant: 'outline',
         containerClass: 'space-y-3 rounded-md border border-dashed p-3',

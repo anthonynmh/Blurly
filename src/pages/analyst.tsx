@@ -1,13 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Play, Sparkles } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+} from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { AnalystMemo } from '@/components/analyst-memo';
 import { EmptyState } from '@/components/empty-state';
 import { WindowsNotReadyBanner } from '@/components/windows-not-ready-banner';
@@ -18,7 +30,7 @@ import { holdingService } from '@/services/holding-service';
 import { settingsService } from '@/services/settings-service';
 import { buildAnalysisContext } from '@/lib/analysis';
 import { isWindows } from '@/lib/platform';
-import type { AnalysisRun, AnalysisType, ApiKeyStatus, TimeWindow } from '@/lib/types';
+import type { AnalysisRun, AnalysisType, AnalystPersona, ApiKeyStatus, TimeWindow } from '@/lib/types';
 
 const ANALYSIS_TYPES: { value: AnalysisType; label: string; description: string }[] = [
   { value: 'PortfolioReview', label: 'Portfolio Review', description: 'Full memo: rebalancing + recent news.' },
@@ -35,11 +47,42 @@ const TIME_WINDOWS: { value: TimeWindow; label: string }[] = [
   { value: '1y', label: 'Last 12 months' },
 ];
 
+const PERSONAS: {
+  value: AnalystPersona;
+  label: string;
+  description: string;
+  model: string;
+}[] = [
+  {
+    value: 'light',
+    label: 'Light Research',
+    description: 'Concise memo. Web search honoured per saved setting. Faster and cheaper.',
+    model: 'gpt-4o',
+  },
+  {
+    value: 'deep',
+    label: 'Deep Research',
+    description: 'In-depth memo with aggressive web search. Slower, more grounded, more credits.',
+    model: 'gpt-5.5',
+  },
+];
+
+const settingsSchema = z.object({
+  webSearchEnabled: z.boolean(),
+  includeExactValues: z.boolean(),
+  includeQuantities: z.boolean(),
+  includeNotes: z.boolean(),
+});
+
+type SettingsFormValues = z.infer<typeof settingsSchema>;
+
 export default function AnalystPage() {
   const queryClient = useQueryClient();
   const [analysisType, setAnalysisType] = useState<AnalysisType>('PortfolioReview');
   const [timeWindow, setTimeWindow] = useState<TimeWindow>('30d');
+  const [persona, setPersona] = useState<AnalystPersona>('light');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [run, setRun] = useState<AnalysisRun | null>(null);
   const windowsBlocked = isWindows();
 
@@ -83,6 +126,7 @@ export default function AnalystPage() {
         inputContextJson: JSON.stringify(context),
         analysisType,
         timeWindow,
+        persona,
       });
     },
     onSuccess: (r) => {
@@ -104,6 +148,15 @@ export default function AnalystPage() {
     !windowsBlocked &&
     !runMutation.isPending;
   const keyStatusMeta = keyStatus ? getAnalystKeyStatusMeta(keyStatus) : null;
+  const selectedPersona = PERSONAS.find((p) => p.value === persona)!;
+  const effectiveWebSearch =
+    persona === 'deep' ? true : aiSettings?.webSearchEnabled ?? false;
+  const webSearchLabel =
+    persona === 'deep'
+      ? 'Web search: ON (forced for Deep Research)'
+      : effectiveWebSearch
+        ? 'Web search: ON'
+        : 'Web search: OFF';
 
   return (
     <div className="space-y-6">
@@ -112,19 +165,37 @@ export default function AnalystPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Analyst</h1>
         <p className="text-sm text-muted-foreground">
-          Long-term positioning review of your current holdings. Optional web search surfaces impactful recent news.
+          Long-term positioning review of your current holdings. Pick a persona, then Run.
         </p>
       </div>
+
+      <AnalystSettingsCard open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       <Card>
         <CardHeader>
           <CardTitle>Run analysis</CardTitle>
           <CardDescription>
-            Uses your current holdings (not snapshots). Click Run to send the data preview below to the configured AI provider.
+            Uses your current holdings (not snapshots). The persona drives model and web search.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Persona</label>
+              <Select value={persona} onValueChange={(v) => setPersona(v as AnalystPersona)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERSONAS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label} ({p.model})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{selectedPersona.description}</p>
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Analysis type</label>
               <Select value={analysisType} onValueChange={(v) => setAnalysisType(v as AnalysisType)}>
@@ -158,7 +229,7 @@ export default function AnalystPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Used as a prompt hint for the web-search tool. {aiSettings?.webSearchEnabled ? 'Web search is on.' : 'Web search is off.'}
+                Used as a prompt hint for web search. {webSearchLabel}.
               </p>
             </div>
           </div>
@@ -252,7 +323,8 @@ export default function AnalystPage() {
               {ANALYSIS_TYPES.find((t) => t.value === run.analysisType)?.label ?? run.analysisType}
             </CardTitle>
             <CardDescription>
-              {run.provider} · {run.model} · {new Date(run.createdAt).toLocaleString()}
+              {run.provider} · {run.model} · {run.persona === 'deep' ? 'Deep Research' : 'Light Research'} ·{' '}
+              {new Date(run.createdAt).toLocaleString()}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -283,6 +355,160 @@ export default function AnalystPage() {
   );
 }
 
+interface AnalystSettingsCardProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+function AnalystSettingsCard({ open, onOpenChange }: AnalystSettingsCardProps) {
+  const queryClient = useQueryClient();
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['ai-settings'],
+    queryFn: () => aiSettingsService.get(),
+  });
+
+  const form = useForm<SettingsFormValues>({
+    resolver: zodResolver(settingsSchema),
+    defaultValues: {
+      webSearchEnabled: true,
+      includeExactValues: false,
+      includeQuantities: false,
+      includeNotes: false,
+    },
+  });
+
+  useEffect(() => {
+    if (settings) {
+      form.reset({
+        webSearchEnabled: settings.webSearchEnabled,
+        includeExactValues: settings.includeExactValues,
+        includeQuantities: settings.includeQuantities,
+        includeNotes: settings.includeNotes,
+      });
+    }
+  }, [settings, form]);
+
+  const saveSettings = useMutation({
+    mutationFn: (values: SettingsFormValues) => aiSettingsService.update(values),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ai-settings'] });
+      toast.success('Analyst settings saved');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <button
+          type="button"
+          onClick={() => onOpenChange(!open)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              Analyst settings
+            </CardTitle>
+            <CardDescription>
+              Web search, and what the data preview sends to the AI. API keys live under Keys.
+            </CardDescription>
+          </div>
+        </button>
+      </CardHeader>
+      {open && (
+        <CardContent>
+          {isLoading ? (
+            <Skeleton className="h-40" />
+          ) : (
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit((v) => saveSettings.mutate(v))}
+                className="space-y-5"
+              >
+                <FormField
+                  control={form.control}
+                  name="webSearchEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel>Enable web search (Light Research)</FormLabel>
+                        <FormDescription>
+                          Lets the analyst look up recent news. Deep Research always uses web search regardless of this toggle.
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium">Privacy — what gets sent to the AI</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Symbols, asset classes, and portfolio weights are always included. The toggles below add more detail.
+                    Off by default for privacy.
+                  </p>
+                  <PrivacyToggle
+                    form={form}
+                    name="includeExactValues"
+                    label="Include exact market values"
+                    description="Sends dollar amounts and total portfolio value to the AI."
+                  />
+                  <PrivacyToggle
+                    form={form}
+                    name="includeQuantities"
+                    label="Include quantities"
+                    description="Sends share/unit counts for each holding."
+                  />
+                  <PrivacyToggle
+                    form={form}
+                    name="includeNotes"
+                    label="Include notes"
+                    description="Sends your personal notes for each holding."
+                  />
+                </div>
+
+                <Button type="submit" disabled={saveSettings.isPending}>
+                  {saveSettings.isPending ? 'Saving…' : 'Save settings'}
+                </Button>
+              </form>
+            </Form>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+interface PrivacyFormProps {
+  form: ReturnType<typeof useForm<SettingsFormValues>>;
+  name: 'includeExactValues' | 'includeQuantities' | 'includeNotes';
+  label: string;
+  description: string;
+}
+
+function PrivacyToggle({ form, name, label, description }: PrivacyFormProps) {
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="flex flex-row items-start justify-between rounded-lg border p-3">
+          <div className="space-y-0.5">
+            <FormLabel>{label}</FormLabel>
+            <FormDescription className="text-xs">{description}</FormDescription>
+          </div>
+          <FormControl>
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
+          </FormControl>
+        </FormItem>
+      )}
+    />
+  );
+}
+
 function getAnalystKeyStatusMeta(status: ApiKeyStatus): {
   kind: 'saved' | 'missing' | 'stale' | 'error';
   title: string;
@@ -299,7 +525,7 @@ function getAnalystKeyStatusMeta(status: ApiKeyStatus): {
       return {
         kind: 'stale',
         title: 'Saved key needs to be re-added',
-        description: status.message ?? 'Blurly expected a saved key, but the encrypted secret file is missing. Go to AI Settings, clear the stale entry, then save the key again.',
+        description: status.message ?? 'Blurly expected a saved key, but the encrypted secret file is missing. Go to Keys, clear the stale entry, then save the key again.',
       };
     case 'error':
       return {
@@ -312,7 +538,7 @@ function getAnalystKeyStatusMeta(status: ApiKeyStatus): {
       return {
         kind: 'missing',
         title: 'No API key configured',
-        description: 'No readable key is currently saved. Go to AI Settings, then save a key to enable Run.',
+        description: 'No readable key is currently saved. Go to Keys, then save a key to enable Run.',
       };
   }
 }

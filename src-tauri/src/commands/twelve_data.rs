@@ -6,13 +6,14 @@ use chrono::Utc;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::commands::db::AppState;
 use crate::commands::key_store;
 use crate::error::CommandError;
 use crate::models::{
-    ApiKeyStatus, PriceRefreshInput, PriceRefreshItemResult, PriceRefreshPreview,
-    PriceRefreshRunResult, TestConnectionResult, TwelveDataUsage,
+    ApiKeyStatus, PriceRefreshInput, PriceRefreshPreview, PriceRefreshRun, TestConnectionResult,
+    TwelveDataUsage,
 };
 
 const PROVIDER_ID: &str = "twelvedata";
@@ -366,53 +367,128 @@ pub async fn get_twelve_data_refresh_preview(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Background-tracked refresh
+//
+// The user clicks Start; `start_price_refresh` validates, inserts a run row
+// with status='running', spawns the staggered loop on the async runtime, and
+// returns the run id synchronously. The UI polls `get_active_price_refresh_run`
+// to surface progress. The dialog is dismissable mid-run because state lives
+// in the DB, not the frontend.
+// ---------------------------------------------------------------------------
+
+fn count_running_for_portfolio(conn: &Connection, portfolio_id: &str) -> Result<i64, CommandError> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM price_refresh_runs
+         WHERE portfolio_id = ?1 AND status = 'running'",
+        params![portfolio_id],
+        |row| row.get(0),
+    )?)
+}
+
 #[tauri::command]
-pub async fn refresh_prices_from_twelve_data(
+pub async fn start_price_refresh(
     state: tauri::State<'_, AppState>,
     input: PriceRefreshInput,
-) -> Result<PriceRefreshRunResult, CommandError> {
+) -> Result<String, CommandError> {
     let limit = input.limit.max(0);
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     let data_dir: PathBuf = state.data_dir.clone();
     let portfolio_id = input.portfolio_id;
-    let count_portfolio_id = portfolio_id.clone();
+    let prep_portfolio_id = portfolio_id.clone();
 
     let (key, eligible_count) = tauri::async_runtime::spawn_blocking(move || {
         let key = read_saved_key(&data_dir)?.ok_or_else(|| {
             CommandError::Storage(
-                "Save a Twelve Data API key in Settings before refreshing prices.".to_string(),
+                "Save a Twelve Data API key in Keys before refreshing prices.".to_string(),
             )
         })?;
         let conn = db.lock();
-        Ok::<_, CommandError>((key, count_eligible(&conn, &count_portfolio_id)?))
+        if count_running_for_portfolio(&conn, &prep_portfolio_id)? > 0 {
+            return Err(CommandError::Storage(
+                "A price refresh is already running for this portfolio.".to_string(),
+            ));
+        }
+        Ok::<_, CommandError>((key, count_eligible(&conn, &prep_portfolio_id)?))
     })
     .await
     .map_err(|e| CommandError::Join(e.to_string()))??;
 
     let usage_before = fetch_usage(&key).await.ok();
     let allowed_limit = limit.min(max_count(eligible_count, usage_before.as_ref()));
-    let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
+    let delay = delay_between_requests(usage_before.as_ref());
+
+    let db_for_load: Arc<Mutex<Connection>> = Arc::clone(&state.db);
+    let load_portfolio_id = portfolio_id.clone();
     let candidates = tauri::async_runtime::spawn_blocking(move || {
-        let conn = db.lock();
-        load_candidates(&conn, &portfolio_id, allowed_limit)
+        let conn = db_for_load.lock();
+        load_candidates(&conn, &load_portfolio_id, allowed_limit)
     })
     .await
     .map_err(|e| CommandError::Join(e.to_string()))??;
-    let delay = delay_between_requests(usage_before.as_ref());
+
+    let run_id = Uuid::new_v4().to_string();
+    let run_id_insert = run_id.clone();
+    let portfolio_id_insert = portfolio_id.clone();
+    let total_count = candidates.len() as i64;
+    let db_for_insert: Arc<Mutex<Connection>> = Arc::clone(&state.db);
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db_for_insert.lock();
+        conn.execute(
+            "INSERT INTO price_refresh_runs
+                (id, portfolio_id, status, total_count, processed_count,
+                 succeeded_count, failed_count, current_symbol, error_message,
+                 started_at, completed_at)
+             VALUES (?1, ?2, 'running', ?3, 0, 0, 0, NULL, NULL, datetime('now'), NULL)",
+            params![run_id_insert, portfolio_id_insert, total_count],
+        )?;
+        Ok::<_, CommandError>(())
+    })
+    .await
+    .map_err(|e| CommandError::Join(e.to_string()))??;
+
+    let db_for_task: Arc<Mutex<Connection>> = Arc::clone(&state.db);
+    let task_run_id = run_id.clone();
+    tauri::async_runtime::spawn(async move {
+        run_refresh_loop(db_for_task, task_run_id, key, candidates, delay).await;
+    });
+
+    Ok(run_id)
+}
+
+async fn run_refresh_loop(
+    db: Arc<Mutex<Connection>>,
+    run_id: String,
+    key: String,
+    candidates: Vec<RefreshCandidate>,
+    delay: Duration,
+) {
     let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
-    let mut results = Vec::new();
-    let mut updated = 0;
-    let mut failed = 0;
+    let mut succeeded: i64 = 0;
+    let mut failed: i64 = 0;
 
     for (index, candidate) in candidates.iter().enumerate() {
+        // Set current_symbol *before* the fetch so the UI sees what's in flight.
+        let mark_db = Arc::clone(&db);
+        let mark_run = run_id.clone();
+        let mark_symbol = candidate.symbol.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let conn = mark_db.lock();
+            conn.execute(
+                "UPDATE price_refresh_runs SET current_symbol = ?1 WHERE id = ?2",
+                params![mark_symbol, mark_run],
+            )
+        })
+        .await;
+
         let price_result = fetch_price(&key, &candidate.provider_symbol).await;
         match price_result {
             Ok(price) => {
-                let db = Arc::clone(&state.db);
+                let row_db = Arc::clone(&db);
                 let id = candidate.id.clone();
-                let today = today.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let conn = db.lock();
+                let today_str = today.clone();
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let conn = row_db.lock();
                     conn.execute(
                         "UPDATE holdings SET
                             current_price = ?1,
@@ -423,70 +499,171 @@ pub async fn refresh_prices_from_twelve_data(
                             price_refresh_error = NULL,
                             updated_at = datetime('now')
                          WHERE id = ?3",
-                        params![price, today, id],
-                    )?;
-                    Ok::<_, CommandError>(())
+                        params![price, today_str, id],
+                    )
                 })
-                .await
-                .map_err(|e| CommandError::Join(e.to_string()))??;
-                updated += 1;
-                results.push(PriceRefreshItemResult {
-                    id: candidate.id.clone(),
-                    symbol: candidate.symbol.clone(),
-                    provider_symbol: candidate.provider_symbol.clone(),
-                    status: "updated".to_string(),
-                    price: Some(price),
-                    message: None,
-                });
+                .await;
+                succeeded += 1;
             }
             Err(message) => {
-                let db = Arc::clone(&state.db);
+                let row_db = Arc::clone(&db);
                 let id = candidate.id.clone();
-                let stored_message = message.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let conn = db.lock();
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let conn = row_db.lock();
                     conn.execute(
                         "UPDATE holdings SET
                             price_refreshed_at = datetime('now'),
                             price_refresh_error = ?1,
                             updated_at = datetime('now')
                          WHERE id = ?2",
-                        params![stored_message, id],
-                    )?;
-                    Ok::<_, CommandError>(())
+                        params![message, id],
+                    )
                 })
-                .await
-                .map_err(|e| CommandError::Join(e.to_string()))??;
+                .await;
                 failed += 1;
-                results.push(PriceRefreshItemResult {
-                    id: candidate.id.clone(),
-                    symbol: candidate.symbol.clone(),
-                    provider_symbol: candidate.provider_symbol.clone(),
-                    status: "failed".to_string(),
-                    price: None,
-                    message: Some(message),
-                });
             }
         }
+
+        let processed = (index + 1) as i64;
+        let progress_db = Arc::clone(&db);
+        let progress_run = run_id.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let conn = progress_db.lock();
+            conn.execute(
+                "UPDATE price_refresh_runs SET
+                    processed_count = ?1,
+                    succeeded_count = ?2,
+                    failed_count = ?3
+                 WHERE id = ?4",
+                params![processed, succeeded, failed, progress_run],
+            )
+        })
+        .await;
 
         if index + 1 < candidates.len() {
             tokio::time::sleep(delay).await;
         }
     }
 
-    let attempted = candidates.len() as i64;
-    Ok(PriceRefreshRunResult {
-        attempted,
-        updated,
-        skipped: limit.saturating_sub(attempted),
-        failed,
-        requested_limit: limit,
-        credits_per_holding: CREDITS_PER_HOLDING,
-        estimated_credits_used: attempted * CREDITS_PER_HOLDING,
-        usage_before,
-        results,
+    let final_status = if !candidates.is_empty() && succeeded == 0 {
+        "failed"
+    } else {
+        "succeeded"
+    };
+    let final_db = Arc::clone(&db);
+    let final_run = run_id.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let conn = final_db.lock();
+        conn.execute(
+            "UPDATE price_refresh_runs SET
+                status = ?1,
+                current_symbol = NULL,
+                completed_at = datetime('now')
+             WHERE id = ?2",
+            params![final_status, final_run],
+        )
     })
+    .await;
 }
+
+#[tauri::command]
+pub async fn get_active_price_refresh_run(
+    state: tauri::State<'_, AppState>,
+    portfolio_id: String,
+) -> Result<Option<PriceRefreshRun>, CommandError> {
+    let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.lock();
+        match conn.query_row(
+            "SELECT id, portfolio_id, status, total_count, processed_count,
+                    succeeded_count, failed_count, current_symbol, error_message,
+                    started_at, completed_at
+             FROM price_refresh_runs
+             WHERE portfolio_id = ?1 AND status = 'running'
+             ORDER BY started_at DESC
+             LIMIT 1",
+            params![portfolio_id],
+            |row| {
+                Ok(PriceRefreshRun {
+                    id: row.get(0)?,
+                    portfolio_id: row.get(1)?,
+                    status: row.get(2)?,
+                    total_count: row.get(3)?,
+                    processed_count: row.get(4)?,
+                    succeeded_count: row.get(5)?,
+                    failed_count: row.get(6)?,
+                    current_symbol: row.get(7)?,
+                    error_message: row.get(8)?,
+                    started_at: row.get(9)?,
+                    completed_at: row.get(10)?,
+                })
+            },
+        ) {
+            Ok(run) => Ok(Some(run)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CommandError::Db(e)),
+        }
+    })
+    .await
+    .map_err(|e| CommandError::Join(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn get_latest_price_refresh_run(
+    state: tauri::State<'_, AppState>,
+    portfolio_id: String,
+) -> Result<Option<PriceRefreshRun>, CommandError> {
+    let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.lock();
+        match conn.query_row(
+            "SELECT id, portfolio_id, status, total_count, processed_count,
+                    succeeded_count, failed_count, current_symbol, error_message,
+                    started_at, completed_at
+             FROM price_refresh_runs
+             WHERE portfolio_id = ?1
+             ORDER BY started_at DESC
+             LIMIT 1",
+            params![portfolio_id],
+            |row| {
+                Ok(PriceRefreshRun {
+                    id: row.get(0)?,
+                    portfolio_id: row.get(1)?,
+                    status: row.get(2)?,
+                    total_count: row.get(3)?,
+                    processed_count: row.get(4)?,
+                    succeeded_count: row.get(5)?,
+                    failed_count: row.get(6)?,
+                    current_symbol: row.get(7)?,
+                    error_message: row.get(8)?,
+                    started_at: row.get(9)?,
+                    completed_at: row.get(10)?,
+                })
+            },
+        ) {
+            Ok(run) => Ok(Some(run)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CommandError::Db(e)),
+        }
+    })
+    .await
+    .map_err(|e| CommandError::Join(e.to_string()))?
+}
+
+/// Reconciliation run at startup: any row left in 'running' state is an orphan
+/// from a previous app session and would otherwise wedge the UI banner forever.
+pub fn mark_orphaned_runs_failed(conn: &Connection) -> Result<(), CommandError> {
+    conn.execute(
+        "UPDATE price_refresh_runs SET
+            status = 'failed',
+            error_message = 'Interrupted — app restarted before the refresh finished.',
+            completed_at = datetime('now')
+         WHERE status = 'running'",
+        [],
+    )?;
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {

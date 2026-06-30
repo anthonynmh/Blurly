@@ -25,13 +25,31 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnalysisRun> {
         error_message: row.get(9)?,
         created_at: row.get(10)?,
         completed_at: row.get(11)?,
+        persona: row.get(12)?,
     })
 }
 
 const SELECT_COLS: &str =
     "SELECT id, analysis_type, provider, model, status, input_context_json, output_markdown, \
-            output_json, sources_json, error_message, created_at, completed_at \
+            output_json, sources_json, error_message, created_at, completed_at, persona \
      FROM analysis_runs";
+
+/// Map a persona id to the concrete OpenAI model and whether web search is
+/// forced on. Light honours the user's saved web-search toggle; Deep ignores it.
+fn persona_runtime(persona: &str, saved_web_search: bool) -> (&'static str, bool) {
+    match persona {
+        "deep" => ("gpt-5.5", true),
+        // 'light' is the default and the fallback for any unknown value.
+        _ => ("gpt-4o", saved_web_search),
+    }
+}
+
+fn normalise_persona(p: &str) -> &'static str {
+    match p {
+        "deep" => "deep",
+        _ => "light",
+    }
+}
 
 #[tauri::command]
 pub async fn list_analysis_runs(
@@ -102,32 +120,34 @@ pub async fn run_analysis(
     input: RunAnalysisInput,
 ) -> Result<AnalysisRun, CommandError> {
     // 1. Read AI settings + insert pending row (sync DB work in spawn_blocking).
+    // The persona drives model selection; saved ai_settings.model is ignored —
+    // it remains in the schema only as legacy state for now.
+    let persona = normalise_persona(&input.persona).to_string();
     let db = Arc::clone(&state.db);
     let (run_id, provider_id, model, web_search_enabled) = {
         let input_ctx = input.input_context_json.clone();
         let analysis_type = input.analysis_type.clone();
+        let persona_for_insert = persona.clone();
         tauri::async_runtime::spawn_blocking(move || -> Result<_, CommandError> {
             let conn = db.lock();
             let settings = ai_settings::get_ai_settings_inner(&conn)?;
+            let (model, web_search) =
+                persona_runtime(&persona_for_insert, settings.web_search_enabled);
             let id = Uuid::new_v4().to_string();
             conn.execute(
                 "INSERT INTO analysis_runs
-                    (id, analysis_type, provider, model, status, input_context_json)
-                 VALUES (?1, ?2, ?3, ?4, 'running', ?5)",
+                    (id, analysis_type, provider, model, status, input_context_json, persona)
+                 VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?6)",
                 params![
                     id,
                     analysis_type,
                     settings.provider,
-                    settings.model,
+                    model,
                     input_ctx,
+                    persona_for_insert,
                 ],
             )?;
-            Ok((
-                id,
-                settings.provider,
-                settings.model,
-                settings.web_search_enabled,
-            ))
+            Ok((id, settings.provider, model.to_string(), web_search))
         })
         .await
         .map_err(|e| CommandError::Join(e.to_string()))??
@@ -159,6 +179,7 @@ pub async fn run_analysis(
                         time_window: &input.time_window,
                         web_search_enabled,
                         input_context_json: &input.input_context_json,
+                        persona: &persona,
                     },
                 )
                 .await

@@ -11,7 +11,7 @@ import SettingsPage from '@/pages/settings';
 import AnalystPage from '@/pages/analyst';
 import AnalysisHistoryPage from '@/pages/analysis-history';
 import WatchlistPage from '@/pages/watchlist';
-import AiSettingsPage from '@/pages/ai-settings';
+import KeysPage from '@/pages/keys';
 import { settingsService } from '@/services/settings-service';
 
 const queryClient = new QueryClient({
@@ -62,7 +62,7 @@ export default function App() {
             <Route path="analysis-history" element={<AnalysisHistoryPage />} />
             <Route path="analysis-history/:id" element={<AnalysisHistoryPage />} />
             <Route path="watchlist" element={<WatchlistPage />} />
-            <Route path="ai-settings" element={<AiSettingsPage />} />
+            <Route path="keys" element={<KeysPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
