@@ -173,8 +173,10 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId, onUpdatePri
           </TableHeader>
           <TableBody>
             {sorted.map((h) => {
-              const asOf = new Date(h.asOfDate + 'T00:00:00Z');
-              const relative = formatDistanceToNow(asOf, { addSuffix: true });
+              const refreshedAt = h.priceRefreshedAt
+                ? new Date(h.priceRefreshedAt.replace(' ', 'T') + 'Z')
+                : new Date(h.asOfDate + 'T00:00:00Z');
+              const relative = formatDistanceToNow(refreshedAt, { addSuffix: true });
 
               return (
                 <TableRow key={h.id}>

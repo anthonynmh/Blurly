@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::Local;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
@@ -463,7 +463,7 @@ async fn run_refresh_loop(
     candidates: Vec<RefreshCandidate>,
     delay: Duration,
 ) {
-    let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+    let today = Local::now().date_naive().format("%Y-%m-%d").to_string();
     let mut succeeded: i64 = 0;
     let mut failed: i64 = 0;
 
@@ -663,7 +663,6 @@ pub fn mark_orphaned_runs_failed(conn: &Connection) -> Result<(), CommandError> 
     )?;
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

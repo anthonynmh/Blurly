@@ -24,12 +24,14 @@ pub async fn get_default_portfolio(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
-        let portfolio = conn.query_row(
-            "SELECT id, name, base_currency, created_at, updated_at
+        let portfolio = conn
+            .query_row(
+                "SELECT id, name, base_currency, created_at, updated_at
              FROM portfolios WHERE id = 'default'",
-            [],
-            row_to_portfolio,
-        ).map_err(|_| CommandError::NotFound("default portfolio".to_string()))?;
+                [],
+                row_to_portfolio,
+            )
+            .map_err(|_| CommandError::NotFound("default portfolio".to_string()))?;
         Ok(portfolio)
     })
     .await
@@ -44,12 +46,14 @@ pub async fn get_portfolio(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
-        let portfolio = conn.query_row(
-            "SELECT id, name, base_currency, created_at, updated_at
+        let portfolio = conn
+            .query_row(
+                "SELECT id, name, base_currency, created_at, updated_at
              FROM portfolios WHERE id = ?1",
-            params![id],
-            row_to_portfolio,
-        ).map_err(|_| CommandError::NotFound(format!("portfolio {id}")))?;
+                params![id],
+                row_to_portfolio,
+            )
+            .map_err(|_| CommandError::NotFound(format!("portfolio {id}")))?;
         Ok(portfolio)
     })
     .await

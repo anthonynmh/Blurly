@@ -83,11 +83,13 @@ pub async fn get_snapshot(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
-        let snapshot_json: String = conn.query_row(
-            "SELECT snapshot_json FROM portfolio_snapshots WHERE id = ?1",
-            params![id],
-            |row| row.get(0),
-        ).map_err(|_| CommandError::NotFound(format!("snapshot {id}")))?;
+        let snapshot_json: String = conn
+            .query_row(
+                "SELECT snapshot_json FROM portfolio_snapshots WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| CommandError::NotFound(format!("snapshot {id}")))?;
         let value: serde_json::Value = serde_json::from_str(&snapshot_json)?;
         Ok(value)
     })
@@ -103,10 +105,8 @@ pub async fn delete_snapshot(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
-        let affected = conn.execute(
-            "DELETE FROM portfolio_snapshots WHERE id = ?1",
-            params![id],
-        )?;
+        let affected =
+            conn.execute("DELETE FROM portfolio_snapshots WHERE id = ?1", params![id])?;
         if affected == 0 {
             return Err(CommandError::NotFound(format!("snapshot {id}")));
         }
