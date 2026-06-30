@@ -195,6 +195,11 @@ export default function AnalystPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">{selectedPersona.description}</p>
+              {persona === 'deep' && analysisType === 'PortfolioReview' && (
+                <p className="text-xs text-muted-foreground">
+                  Portfolio Review with Deep Research is about $2 USD per 10 holdings.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Analysis type</label>
