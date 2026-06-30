@@ -87,18 +87,40 @@ pub async fn update_watchlist_item(
     let db: Arc<Mutex<Connection>> = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
-        let existing = conn.query_row(
-            &format!("{SELECT_COLS} WHERE id = ?1"),
-            params![id],
-            row_to_item,
-        ).map_err(|_| CommandError::NotFound(format!("watchlist_item {id}")))?;
+        let existing = conn
+            .query_row(
+                &format!("{SELECT_COLS} WHERE id = ?1"),
+                params![id],
+                row_to_item,
+            )
+            .map_err(|_| CommandError::NotFound(format!("watchlist_item {id}")))?;
 
         let symbol = input.symbol.unwrap_or(existing.symbol);
-        let name = if input.name.is_some() { input.name } else { existing.name };
-        let asset_class = if input.asset_class.is_some() { input.asset_class } else { existing.asset_class };
-        let sector = if input.sector.is_some() { input.sector } else { existing.sector };
-        let region = if input.region.is_some() { input.region } else { existing.region };
-        let notes = if input.notes.is_some() { input.notes } else { existing.notes };
+        let name = if input.name.is_some() {
+            input.name
+        } else {
+            existing.name
+        };
+        let asset_class = if input.asset_class.is_some() {
+            input.asset_class
+        } else {
+            existing.asset_class
+        };
+        let sector = if input.sector.is_some() {
+            input.sector
+        } else {
+            existing.sector
+        };
+        let region = if input.region.is_some() {
+            input.region
+        } else {
+            existing.region
+        };
+        let notes = if input.notes.is_some() {
+            input.notes
+        } else {
+            existing.notes
+        };
 
         conn.execute(
             "UPDATE watchlist_items SET
