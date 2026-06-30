@@ -1,6 +1,11 @@
 //! OpenAI provider. Uses the **Responses API** with the `web_search`
 //! tool when web search is enabled. All OpenAI-specific shapes stay in this file
 //! so swapping in another provider only touches one module.
+//!
+//! Request timeout is per-persona: Light (gpt-4o) finishes in seconds so 90s is
+//! plenty; Deep (gpt-5.5 + reasoning.effort=high + web_search) routinely runs
+//! 5–15 min, so we give it 900s. If even that proves insufficient, the next
+//! step is background mode (POST with `background: true`, then poll).
 
 use std::time::Duration;
 
@@ -105,7 +110,8 @@ impl OpenAiProvider {
             body["reasoning"] = json!({ "effort": "high" });
         }
 
-        let res = http_client(90)
+        let timeout_secs = if req.persona == "deep" { 900 } else { 90 };
+        let res = http_client(timeout_secs)
             .post(RESPONSES_URL)
             .bearer_auth(key)
             .json(&body)

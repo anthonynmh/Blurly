@@ -17,11 +17,20 @@ When web search is enabled, surface the latest news that materially affects this
 
 ## Reasons for Over/Underweights
 Explain why specific holdings or asset classes are over- or under-weighted relative to a balanced \
-long-term allocation. Cite news sources where the rationale depends on recent developments.
+long-term allocation. For every over/underweight call, state an explicit **time horizon** for the view \
+(e.g. \"short-term, <3 months\", \"medium-term, 6–18 months\", \"long-term, 3+ years\") so the user knows \
+whether the call is tactical or strategic. Every claim must be backed by an explicit chain of reasoning: \
+either trace from one or more cited sources to the conclusion, or, when the conclusion rests on a reasoned \
+aggregation of sources, name the sources being aggregated and the logic linking them. Do not assert an \
+over/underweight view without a stated rationale grounded in cited evidence (or, when web search is off, \
+in the portfolio-context data the user provided).
 
 ## Actionable Steps
 Give clear, prioritised steps the user can take. Frame everything as \"consider…\" or \"questions before \
-rebalancing…\" — never direct buy/sell instructions.
+rebalancing…\" — never direct buy/sell instructions. For each step, state the **time horizon** it applies \
+to and the justification chain that supports it (cited sources, aggregated reasoning, or specific facts from \
+the portfolio context). A recommendation without a traceable justification is not acceptable — omit it \
+rather than asserting it unsupported.
 
 ## Realignment with Investment Strategy
 Spell out how the recommendations bring the portfolio back in line with the user's stated long-term \
@@ -81,7 +90,10 @@ pub fn persona_suffix(persona: &str) -> &'static str {
         "deep" => {
             "This is a Deep Research run. Use web search aggressively to ground every claim in \
              Current Assessment and Reasons for Over/Underweights. Cite at least 3 distinct \
-             sources in the Sources section. Sections may be longer, but stay structured."
+             sources in the Sources section. Sections may be longer, but stay structured. \
+             For every over/underweight view and every Actionable Step, the chain of reasoning from cited \
+             sources to the conclusion must be visible inline — name the sources you are drawing on at the \
+             point of the claim, not only in the Sources section, and state the time horizon the view applies to."
         }
         _ => {
             "This is a Light Research run. Keep each section concise (2–4 bullet points). \
