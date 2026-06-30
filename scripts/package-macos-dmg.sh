@@ -40,15 +40,36 @@ detach_blurly_volume
 rm -f "$MACOS_DIR"/rw."${PRODUCT_NAME}"_*.dmg
 rm -f "$DMG_DIR"/rw."${PRODUCT_NAME}"_*.dmg
 
-if pnpm tauri build --bundles dmg "$@"; then
-  if [[ -f "$FINAL_DMG" ]]; then
-    echo "DMG: $FINAL_DMG"
-    exit 0
+notarize_and_staple_dmg() {
+  local dmg="$1"
+
+  if [[ -z "${APPLE_ID:-}" || -z "${APPLE_PASSWORD:-}" || -z "${APPLE_TEAM_ID:-}" ]]; then
+    echo "WARNING: APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID not in env — DMG not notarized." >&2
+    echo "WARNING: The .app inside is notarized via Tauri, but the DMG itself will not pass stapler validate." >&2
+    return 0
   fi
 
-  FOUND_DMG="$(find "$DMG_DIR" -maxdepth 1 -type f -name '*.dmg' | sort | tail -n 1)"
-  if [[ -n "$FOUND_DMG" ]]; then
-    echo "DMG: $FOUND_DMG"
+  echo "Submitting DMG to Apple notary service (this can take 1-5 minutes)..."
+  xcrun notarytool submit "$dmg" \
+    --apple-id "$APPLE_ID" \
+    --password "$APPLE_PASSWORD" \
+    --team-id "$APPLE_TEAM_ID" \
+    --wait
+  echo "Stapling notarization ticket to DMG..."
+  xcrun stapler staple "$dmg"
+}
+
+if pnpm tauri build --bundles dmg "$@"; then
+  RESOLVED_DMG=""
+  if [[ -f "$FINAL_DMG" ]]; then
+    RESOLVED_DMG="$FINAL_DMG"
+  else
+    RESOLVED_DMG="$(find "$DMG_DIR" -maxdepth 1 -type f -name '*.dmg' | sort | tail -n 1)"
+  fi
+
+  if [[ -n "$RESOLVED_DMG" && -f "$RESOLVED_DMG" ]]; then
+    notarize_and_staple_dmg "$RESOLVED_DMG"
+    echo "DMG: $RESOLVED_DMG"
     exit 0
   fi
 
