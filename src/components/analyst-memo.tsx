@@ -1,12 +1,29 @@
-import { useMemo } from 'react';
+import { useMemo, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ExternalLink } from 'lucide-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import type { AnalysisSource } from '@/lib/types';
 
 interface AnalystMemoProps {
   markdown: string;
   sourcesJson?: string | null;
+}
+
+// Anchors inside the Tauri webview would otherwise navigate the app itself
+// (no back button). Route every external link through the opener plugin so it
+// opens in the user's default browser.
+function ExternalAnchor({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!href) return;
+    event.preventDefault();
+    void openUrl(href);
+  };
+  return (
+    <a {...rest} href={href} onClick={handleClick} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  );
 }
 
 export function AnalystMemo({ markdown, sourcesJson }: AnalystMemoProps) {
@@ -23,7 +40,9 @@ export function AnalystMemo({ markdown, sourcesJson }: AnalystMemoProps) {
   return (
     <div className="space-y-6">
       <article className="prose prose-neutral max-w-none dark:prose-invert prose-headings:font-semibold prose-h2:mt-6 prose-h2:text-lg prose-h3:text-base prose-pre:bg-muted">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ExternalAnchor }}>
+          {markdown}
+        </ReactMarkdown>
       </article>
       {sources.length > 0 && (
         <div className="space-y-2 border-t pt-4">
@@ -32,14 +51,12 @@ export function AnalystMemo({ markdown, sourcesJson }: AnalystMemoProps) {
             {sources.map((s, i) => (
               <li key={`${s.url}-${i}`} className="flex items-start gap-2">
                 <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
-                <a
+                <ExternalAnchor
                   href={s.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
                   className="break-all text-blue-600 hover:underline dark:text-blue-400"
                 >
                   {s.title ?? s.url}
-                </a>
+                </ExternalAnchor>
               </li>
             ))}
           </ul>

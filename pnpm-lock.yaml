@@ -41,6 +41,9 @@ dependencies:
   '@tauri-apps/api':
     specifier: ^2
     version: 2.0.0
+  '@tauri-apps/plugin-opener':
+    specifier: ^2.5.4
+    version: 2.5.4
   class-variance-authority:
     specifier: ^0.7.1
     version: 0.7.1
@@ -1592,6 +1595,10 @@ packages:
     resolution: {integrity: sha512-moKgCp2EX7X5GiOx/G/bmoEpkFQVVmyS98UaJU4xUVzan+E1BdwlAKcbip+cGldshYOqL4JSwAEN1OkRXeug0Q==}
     dev: false
 
+  /@tauri-apps/api@2.11.1:
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
+    dev: false
+
   /@tauri-apps/cli-darwin-arm64@2.0.0:
     resolution: {integrity: sha512-+agYqg2c77imaMfKw7mzqecVIDGcwr6bZMdglJ808O2UjTFzMwnAam1sU26YBYU+IyIjwOu00fm9Azpal+N/Ew==}
     engines: {node: '>= 10'}
@@ -1698,6 +1705,12 @@ packages:
       '@tauri-apps/cli-win32-ia32-msvc': 2.0.0
       '@tauri-apps/cli-win32-x64-msvc': 2.0.0
     dev: true
+
+  /@tauri-apps/plugin-opener@2.5.4:
+    resolution: {integrity: sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==}
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+    dev: false
 
   /@types/babel__core@7.20.5:
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
