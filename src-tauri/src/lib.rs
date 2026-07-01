@@ -64,6 +64,17 @@ pub fn run() {
             commands::analysis::get_analysis_run,
             commands::analysis::delete_analysis_run,
             commands::analysis::run_analysis,
+            commands::strategy::get_investment_strategy,
+            commands::strategy::update_investment_strategy,
+            commands::strategy::list_strategy_milestones,
+            commands::strategy::create_strategy_milestone,
+            commands::strategy::update_strategy_milestone,
+            commands::strategy::delete_strategy_milestone,
+            commands::analyst_chat::list_analyst_threads,
+            commands::analyst_chat::get_analyst_thread,
+            commands::analyst_chat::create_analyst_thread,
+            commands::analyst_chat::delete_analyst_thread,
+            commands::analyst_chat::ask_analyst_question,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

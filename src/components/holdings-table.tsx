@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -121,6 +121,7 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId, onUpdatePri
     }
     return sortDir === 'asc' ? cmp : -cmp;
   });
+  const grouped = groupSortedHoldings(sorted, baseCurrency, sortKey, sortDir);
 
   function SortHeader({ k, children }: { k: SortKey; children: ReactNode }) {
     return (
@@ -172,103 +173,134 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId, onUpdatePri
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.map((h) => {
-              const refreshedAt = h.priceRefreshedAt
-                ? new Date(h.priceRefreshedAt.replace(' ', 'T') + 'Z')
-                : new Date(h.asOfDate + 'T00:00:00Z');
-              const relative = formatDistanceToNow(refreshedAt, { addSuffix: true });
-
-              return (
-                <TableRow key={h.id}>
-                  <TableCell className="font-medium">{h.symbol}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{h.assetClass}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">{h.quantity.toLocaleString()}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {h.averagePrice != null
-                      ? formatCurrency(h.averagePrice, h.currency)
-                      : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right">{formatCurrency(h.currentPrice, h.currency)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(h.marketValue, h.currency)}</TableCell>
-                  <TableCell className={cn(
-                    'text-right tabular-nums',
-                    h.unrealizedPL != null && h.unrealizedPL >= 0 ? 'text-green-600' : '',
-                    h.unrealizedPL != null && h.unrealizedPL < 0 ? 'text-red-600' : '',
-                  )}>
-                    {h.unrealizedPL != null
-                      ? formatCurrency(h.unrealizedPL, h.currency)
-                      : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className={cn(
-                    'text-right tabular-nums',
-                    h.unrealizedPLPercent != null && h.unrealizedPLPercent >= 0 ? 'text-green-600' : '',
-                    h.unrealizedPLPercent != null && h.unrealizedPLPercent < 0 ? 'text-red-600' : '',
-                  )}>
-                    {h.unrealizedPLPercent != null
-                      ? formatPercent(h.unrealizedPLPercent)
-                      : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {h.currency === baseCurrency ? formatPercent(h.weight) : (
-                      <span className="text-muted-foreground text-xs">non-base</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{h.currency}</TableCell>
-                  <TableCell>
-                    {h.isStale ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge
-                            variant="secondary"
-                            className="cursor-default gap-1 border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                          >
-                            <AlertTriangle className="h-3 w-3" />
-                            {relative}
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Last updated {h.daysSinceUpdate} day{h.daysSinceUpdate !== 1 ? 's' : ''} ago. Consider refreshing.
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">{relative}</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Open menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => navigate(`/holdings/${h.id}/edit`)}>
-                          <Pencil className="h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        {onUpdatePrice && (
-                          <DropdownMenuItem onClick={() => onUpdatePrice(h)}>
-                            <RefreshCw className="h-4 w-4" />
-                            Update price
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteId(h.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+            {grouped.map((group) => (
+              <Fragment key={group.assetClass}>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell colSpan={12}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">{group.assetClass}</Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {group.holdings.length} holding{group.holdings.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Base subtotal:{' '}
+                        <span className="font-medium text-foreground">
+                          {formatCurrency(group.baseValue, baseCurrency)}
+                        </span>
+                        {' · '}
+                        {formatPercent(group.baseWeight)}
+                      </div>
+                    </div>
                   </TableCell>
                 </TableRow>
-              );
-            })}
+                {group.holdings.map((h) => {
+                  const refreshedAt = h.priceRefreshedAt
+                    ? new Date(h.priceRefreshedAt.replace(' ', 'T') + 'Z')
+                    : new Date(h.asOfDate + 'T00:00:00Z');
+                  const relative = formatDistanceToNow(refreshedAt, { addSuffix: true });
+
+                  return (
+                    <TableRow key={h.id}>
+                      <TableCell className="font-medium">
+                        <div>{h.symbol}</div>
+                        {(h.name || h.broker) && (
+                          <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                            {[h.name, h.broker ? `Broker app: ${h.broker}` : null].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{h.assetClass}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{h.quantity.toLocaleString()}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {h.averagePrice != null
+                          ? formatCurrency(h.averagePrice, h.currency)
+                          : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right">{formatCurrency(h.currentPrice, h.currency)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(h.marketValue, h.currency)}</TableCell>
+                      <TableCell className={cn(
+                        'text-right tabular-nums',
+                        h.unrealizedPL != null && h.unrealizedPL >= 0 ? 'text-green-600' : '',
+                        h.unrealizedPL != null && h.unrealizedPL < 0 ? 'text-red-600' : '',
+                      )}>
+                        {h.unrealizedPL != null
+                          ? formatCurrency(h.unrealizedPL, h.currency)
+                          : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className={cn(
+                        'text-right tabular-nums',
+                        h.unrealizedPLPercent != null && h.unrealizedPLPercent >= 0 ? 'text-green-600' : '',
+                        h.unrealizedPLPercent != null && h.unrealizedPLPercent < 0 ? 'text-red-600' : '',
+                      )}>
+                        {h.unrealizedPLPercent != null
+                          ? formatPercent(h.unrealizedPLPercent)
+                          : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {h.currency === baseCurrency ? formatPercent(h.weight) : (
+                          <span className="text-muted-foreground text-xs">non-base</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{h.currency}</TableCell>
+                      <TableCell>
+                        {h.isStale ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="secondary"
+                                className="cursor-default gap-1 border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                {relative}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Last updated {h.daysSinceUpdate} day{h.daysSinceUpdate !== 1 ? 's' : ''} ago. Consider refreshing.
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">{relative}</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Open menu</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => navigate(`/holdings/${h.id}/edit`)}>
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            {onUpdatePrice && (
+                              <DropdownMenuItem onClick={() => onUpdatePrice(h)}>
+                                <RefreshCw className="h-4 w-4" />
+                                Update price
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteId(h.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </Fragment>
+            ))}
           </TableBody>
         </Table>
 
@@ -298,4 +330,36 @@ export function HoldingsTable({ holdings, baseCurrency, portfolioId, onUpdatePri
       </>
     </TooltipProvider>
   );
+}
+
+function groupSortedHoldings(
+  holdings: HoldingWithComputedValues[],
+  baseCurrency: string,
+  sortKey: SortKey,
+  sortDir: SortDir,
+) {
+  const groups = new Map<string, HoldingWithComputedValues[]>();
+  for (const holding of holdings) {
+    const list = groups.get(holding.assetClass) ?? [];
+    list.push(holding);
+    groups.set(holding.assetClass, list);
+  }
+  return Array.from(groups.entries())
+    .map(([assetClass, groupHoldings]) => ({
+      assetClass,
+      holdings: groupHoldings,
+      baseValue: groupHoldings
+        .filter((h) => h.currency === baseCurrency)
+        .reduce((sum, h) => sum + h.marketValue, 0),
+      baseWeight: groupHoldings
+        .filter((h) => h.currency === baseCurrency)
+        .reduce((sum, h) => sum + h.weight, 0),
+    }))
+    .sort((a, b) => {
+      if (sortKey === 'assetClass') {
+        const cmp = a.assetClass.localeCompare(b.assetClass);
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+      return b.baseValue - a.baseValue;
+    });
 }

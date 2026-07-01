@@ -28,6 +28,7 @@ import { aiSettingsService } from '@/services/ai-settings-service';
 import { analysisService } from '@/services/analysis-service';
 import { holdingService } from '@/services/holding-service';
 import { settingsService } from '@/services/settings-service';
+import { strategyService } from '@/services/strategy-service';
 import { buildAnalysisContext } from '@/lib/analysis';
 import { isWindows } from '@/lib/platform';
 import type { AnalysisRun, AnalysisType, AnalystPersona, ApiKeyStatus, TimeWindow } from '@/lib/types';
@@ -109,6 +110,14 @@ export default function AnalystPage() {
     queryKey: ['holdings', 'default'],
     queryFn: () => holdingService.list('default'),
   });
+  const { data: strategy } = useQuery({
+    queryKey: ['investment-strategy'],
+    queryFn: () => strategyService.get(),
+  });
+  const { data: milestones } = useQuery({
+    queryKey: ['strategy-milestones'],
+    queryFn: () => strategyService.listMilestones(),
+  });
 
   const context = useMemo(() => {
     if (!holdings || !appSettings || !aiSettings) return null;
@@ -116,8 +125,8 @@ export default function AnalystPage() {
       includeExactValues: aiSettings.includeExactValues,
       includeQuantities: aiSettings.includeQuantities,
       includeNotes: aiSettings.includeNotes,
-    });
-  }, [holdings, appSettings, aiSettings]);
+    }, appSettings.stalenessThresholdDays, strategy, milestones ?? []);
+  }, [holdings, appSettings, aiSettings, strategy, milestones]);
 
   const runMutation = useMutation({
     mutationFn: async () => {

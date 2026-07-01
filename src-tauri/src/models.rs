@@ -352,6 +352,118 @@ pub struct RunAnalysisInput {
     pub persona: String,
 }
 
+// ---------------------------------------------------------------------------
+// Strategy
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InvestmentStrategy {
+    pub investor_personality: String,
+    pub notes: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateInvestmentStrategy {
+    pub investor_personality: Option<String>,
+    pub notes: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StrategyMilestone {
+    pub id: String,
+    pub label: String,
+    pub description: Option<String>,
+    pub target_date: String,
+    pub target_amount: Option<f64>,
+    pub target_currency: Option<String>,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewStrategyMilestone {
+    pub label: String,
+    pub description: Option<String>,
+    pub target_date: String,
+    pub target_amount: Option<f64>,
+    pub target_currency: Option<String>,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateStrategyMilestone {
+    pub label: Option<String>,
+    pub description: Option<Option<String>>,
+    pub target_date: Option<String>,
+    pub target_amount: Option<Option<f64>>,
+    pub target_currency: Option<Option<String>>,
+    pub sort_order: Option<i64>,
+}
+
+// ---------------------------------------------------------------------------
+// Analyst chat
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalystThread {
+    pub id: String,
+    pub analysis_run_id: Option<String>,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalystMessage {
+    pub id: String,
+    pub thread_id: String,
+    pub role: String,
+    pub content: String,
+    pub sources_json: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalystThreadDetail {
+    pub thread: AnalystThread,
+    pub messages: Vec<AnalystMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewAnalystThread {
+    pub analysis_run_id: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AskAnalystInput {
+    pub thread_id: Option<String>,
+    pub analysis_run_id: Option<String>,
+    pub question: String,
+    pub context_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AskAnalystResult {
+    pub thread: AnalystThread,
+    pub user_message: AnalystMessage,
+    pub assistant_message: AnalystMessage,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TestConnectionResult {

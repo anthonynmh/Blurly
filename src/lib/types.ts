@@ -358,6 +358,8 @@ export interface AnalysisPortfolioContext {
   staleHoldingsCount: number;
   /** Always included — earliest asOfDate across all holdings. */
   oldestAsOfDate: string;
+  /** Optional user-defined strategy and milestones. */
+  strategy?: AnalysisStrategyContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,4 +375,104 @@ export interface BulkPriceUpdate {
 export interface AnalysisSource {
   title?: string;
   url: string;
+}
+
+// ---------------------------------------------------------------------------
+// Strategy
+// ---------------------------------------------------------------------------
+
+export type InvestorPersonality = 'passive' | 'hybrid' | 'active';
+
+export interface InvestmentStrategy {
+  investorPersonality: InvestorPersonality | string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateInvestmentStrategy {
+  investorPersonality?: InvestorPersonality;
+  notes?: string | null;
+}
+
+export interface StrategyMilestone {
+  id: string;
+  label: string;
+  description?: string;
+  targetDate: string;
+  targetAmount?: number;
+  targetCurrency?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NewStrategyMilestone = Omit<StrategyMilestone, 'id' | 'createdAt' | 'updatedAt'>;
+export type UpdateStrategyMilestone = Partial<{
+  label: string;
+  description: string | null;
+  targetDate: string;
+  targetAmount: number | null;
+  targetCurrency: string | null;
+  sortOrder: number;
+}>;
+
+export interface AnalysisStrategyMilestoneContext {
+  label: string;
+  description?: string;
+  targetDate: string;
+  targetAmount?: number;
+  targetCurrency?: string;
+  countdown: string;
+  isOverdue: boolean;
+}
+
+export interface AnalysisStrategyContext {
+  investorPersonality: string;
+  notes?: string;
+  milestones: AnalysisStrategyMilestoneContext[];
+}
+
+// ---------------------------------------------------------------------------
+// Analyst chat
+// ---------------------------------------------------------------------------
+
+export interface AnalystThread {
+  id: string;
+  analysisRunId?: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnalystMessage {
+  id: string;
+  threadId: string;
+  role: 'user' | 'assistant' | string;
+  content: string;
+  sourcesJson?: string;
+  createdAt: string;
+}
+
+export interface AnalystThreadDetail {
+  thread: AnalystThread;
+  messages: AnalystMessage[];
+}
+
+export interface NewAnalystThread {
+  analysisRunId?: string;
+  title?: string;
+}
+
+export interface AskAnalystInput {
+  threadId?: string;
+  analysisRunId?: string;
+  question: string;
+  contextJson: string;
+}
+
+export interface AskAnalystResult {
+  thread: AnalystThread;
+  userMessage: AnalystMessage;
+  assistantMessage: AnalystMessage;
 }

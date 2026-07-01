@@ -10,6 +10,8 @@ import EditHoldingPage from '@/pages/edit-holding';
 import SettingsPage from '@/pages/settings';
 import AnalystPage from '@/pages/analyst';
 import AnalysisHistoryPage from '@/pages/analysis-history';
+import AskAnalystPage from '@/pages/ask-analyst';
+import StrategyPage from '@/pages/strategy';
 import WatchlistPage from '@/pages/watchlist';
 import KeysPage from '@/pages/keys';
 import { settingsService } from '@/services/settings-service';
@@ -59,8 +61,10 @@ export default function App() {
             <Route path="holdings/add" element={<AddHoldingPage />} />
             <Route path="holdings/:id/edit" element={<EditHoldingPage />} />
             <Route path="analyst" element={<AnalystPage />} />
+            <Route path="analyst/ask" element={<AskAnalystPage />} />
             <Route path="analysis-history" element={<AnalysisHistoryPage />} />
             <Route path="analysis-history/:id" element={<AnalysisHistoryPage />} />
+            <Route path="strategy" element={<StrategyPage />} />
             <Route path="watchlist" element={<WatchlistPage />} />
             <Route path="keys" element={<KeysPage />} />
             <Route path="settings" element={<SettingsPage />} />

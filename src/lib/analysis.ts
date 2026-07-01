@@ -3,7 +3,9 @@ import type {
   Holding,
   HoldingAnalysisInput,
   HoldingWithComputedValues,
+  InvestmentStrategy,
   PrivacyFlags,
+  StrategyMilestone,
 } from './types';
 import {
   computeHoldingsWithValues,
@@ -36,6 +38,8 @@ export function buildAnalysisContext(
   baseCurrency: string,
   privacy: PrivacyFlags,
   stalenessThresholdDays?: number,
+  strategy?: InvestmentStrategy,
+  milestones: StrategyMilestone[] = [],
 ): AnalysisPortfolioContext {
   const withValues = computeHoldingsWithValues(holdings, baseCurrency, stalenessThresholdDays);
   const baseHoldings = withValues.filter((h) => h.currency === baseCurrency);
@@ -78,7 +82,7 @@ export function buildAnalysisContext(
     daysSinceUpdate: h.daysSinceUpdate,
   });
 
-  return {
+  const context: AnalysisPortfolioContext = {
     generatedAt: new Date().toISOString(),
     baseCurrency,
     totalPortfolioValue: privacy.includeExactValues ? totalPortfolioValue : undefined,
@@ -98,6 +102,24 @@ export function buildAnalysisContext(
     staleHoldingsCount: summary.staleHoldingsCount,
     oldestAsOfDate,
   };
+
+  if (strategy) {
+    context.strategy = {
+      investorPersonality: strategy.investorPersonality,
+      notes: strategy.notes,
+      milestones: milestones.map((m) => ({
+        label: m.label,
+        description: m.description,
+        targetDate: m.targetDate,
+        targetAmount: m.targetAmount,
+        targetCurrency: m.targetCurrency,
+        countdown: describeMilestoneCountdown(m.targetDate),
+        isOverdue: isPastDate(m.targetDate),
+      })),
+    };
+  }
+
+  return context;
 }
 
 /** Default privacy stance: tickers + weights + sectors, no exact values. */
@@ -106,3 +128,30 @@ export const DEFAULT_PRIVACY: PrivacyFlags = {
   includeQuantities: false,
   includeNotes: false,
 };
+
+export function describeMilestoneCountdown(targetDate: string, now = new Date()): string {
+  const target = parseDateOnly(targetDate);
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const diffDays = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  if (diffDays === 0) return 'today';
+  const absDays = Math.abs(diffDays);
+  if (absDays < 31) {
+    return diffDays < 0 ? `overdue by ${absDays}d` : `${absDays}d left`;
+  }
+  const months = Math.round(absDays / 30.4375);
+  if (months < 24) {
+    return diffDays < 0 ? `overdue by ${months}m` : `${months}m left`;
+  }
+  const years = Math.round(months / 12);
+  return diffDays < 0 ? `overdue by ${years}y` : `${years}y left`;
+}
+
+function isPastDate(targetDate: string, now = new Date()): boolean {
+  const target = parseDateOnly(targetDate);
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return target.getTime() < today.getTime();
+}
+
+function parseDateOnly(value: string): Date {
+  return new Date(`${value}T00:00:00Z`);
+}
