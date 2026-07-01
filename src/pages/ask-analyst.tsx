@@ -27,15 +27,29 @@ import { analysisService } from '@/services/analysis-service';
 import { holdingService } from '@/services/holding-service';
 import { settingsService } from '@/services/settings-service';
 import { strategyService } from '@/services/strategy-service';
+import { strategyReservationsService } from '@/services/strategy-reservations-service';
 import { buildAnalysisContext } from '@/lib/analysis';
 import { formatDateTime } from '@/lib/formatters';
 import { isWindows } from '@/lib/platform';
+import type { AskAnalystModel } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+const ASK_ANALYST_MODELS: { value: AskAnalystModel; label: string; description: string }[] = [
+  { value: 'gpt-4o', label: 'GPT-4o', description: 'Fast, lower-cost follow-up.' },
+  { value: 'gpt-5.5', label: 'GPT-5.5', description: 'Deeper reasoning; slower, higher cost.' },
+];
+
+function modelDisplayName(model: string | undefined): string | null {
+  if (!model) return null;
+  const match = ASK_ANALYST_MODELS.find((m) => m.value === model);
+  return match?.label ?? model;
+}
 
 export default function AskAnalystPage() {
   const queryClient = useQueryClient();
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState('latest');
+  const [responseModel, setResponseModel] = useState<AskAnalystModel>('gpt-4o');
   const [question, setQuestion] = useState('');
   const [proDialogOpen, setProDialogOpen] = useState(false);
   const windowsBlocked = isWindows();
@@ -79,6 +93,10 @@ export default function AskAnalystPage() {
     queryKey: ['strategy-milestones'],
     queryFn: () => strategyService.listMilestones(),
   });
+  const { data: reservations } = useQuery({
+    queryKey: ['strategy-cash-reservations'],
+    queryFn: () => strategyReservationsService.list(),
+  });
 
   const successfulRuns = useMemo(
     () => (runs ?? []).filter((run) => run.status === 'succeeded' && run.outputMarkdown),
@@ -89,12 +107,21 @@ export default function AskAnalystPage() {
   const threadQuestionLimitReached = !!activeThreadId && userQuestionCount >= 1;
   const context = useMemo(() => {
     if (!holdings || !appSettings || !aiSettings) return null;
-    return buildAnalysisContext(holdings, appSettings.baseCurrency, {
-      includeExactValues: aiSettings.includeExactValues,
-      includeQuantities: aiSettings.includeQuantities,
-      includeNotes: aiSettings.includeNotes,
-    }, appSettings.stalenessThresholdDays, strategy, milestones ?? []);
-  }, [holdings, appSettings, aiSettings, strategy, milestones]);
+    return buildAnalysisContext(
+      holdings,
+      appSettings.baseCurrency,
+      {
+        includeExactValues: aiSettings.includeExactValues,
+        includeQuantities: aiSettings.includeQuantities,
+        includeNotes: aiSettings.includeNotes,
+      },
+      appSettings.stalenessThresholdDays,
+      strategy,
+      milestones ?? [],
+      reservations ?? [],
+      appSettings.fxUsdSgdRate,
+    );
+  }, [holdings, appSettings, aiSettings, strategy, milestones, reservations]);
 
   const askMutation = useMutation({
     mutationFn: () => {
@@ -104,6 +131,7 @@ export default function AskAnalystPage() {
         analysisRunId: selectedAnalysisId === 'latest' ? undefined : selectedAnalysisId,
         question,
         contextJson: JSON.stringify(context),
+        responseModel,
       });
     },
     onSuccess: (result) => {
@@ -203,7 +231,7 @@ export default function AskAnalystPage() {
               <CardTitle className="text-base">Question context</CardTitle>
               <CardDescription>Pick the analysis memo this thread should reference.</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3 md:flex-row md:items-center">
+            <CardContent className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
               <Select value={selectedAnalysisId} onValueChange={setSelectedAnalysisId}>
                 <SelectTrigger className="md:w-96">
                   <SelectValue />
@@ -213,6 +241,22 @@ export default function AskAnalystPage() {
                   {successfulRuns.map((run) => (
                     <SelectItem key={run.id} value={run.id}>
                       {run.analysisType} · {formatDateTime(run.createdAt)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={responseModel}
+                onValueChange={(v) => setResponseModel(v as AskAnalystModel)}
+              >
+                <SelectTrigger className="md:w-48" aria-label="Response model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASK_ANALYST_MODELS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="font-medium">{option.label}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{option.description}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -265,7 +309,13 @@ export default function AskAnalystPage() {
                       )}
                     >
                       <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <span>{message.role === 'user' ? 'You' : 'Analyst'}</span>
+                        <span>
+                          {message.role === 'user'
+                            ? 'You'
+                            : modelDisplayName(message.responseModel)
+                              ? `Analyst · ${modelDisplayName(message.responseModel)}`
+                              : 'Analyst'}
+                        </span>
                         <span>{formatDateTime(message.createdAt)}</span>
                       </div>
                       {message.role === 'assistant' ? (

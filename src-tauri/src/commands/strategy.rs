@@ -45,15 +45,16 @@ fn row_to_milestone(row: &rusqlite::Row<'_>) -> rusqlite::Result<StrategyMilesto
         target_amount: row.get(4)?,
         target_currency: row.get(5)?,
         sort_order: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        icon: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
 const STRATEGY_SELECT: &str =
     "SELECT investor_personality, notes, created_at, updated_at FROM investment_strategy WHERE id = 1";
 const MILESTONE_SELECT: &str =
-    "SELECT id, label, description, target_date, target_amount, target_currency, sort_order, created_at, updated_at FROM strategy_milestones";
+    "SELECT id, label, description, target_date, target_amount, target_currency, sort_order, icon, created_at, updated_at FROM strategy_milestones";
 
 #[tauri::command]
 pub async fn get_investment_strategy(
@@ -131,8 +132,8 @@ pub async fn create_strategy_milestone(
         let id = Uuid::new_v4().to_string();
         conn.execute(
             "INSERT INTO strategy_milestones
-                (id, label, description, target_date, target_amount, target_currency, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (id, label, description, target_date, target_amount, target_currency, sort_order, icon)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id,
                 input.label,
@@ -141,6 +142,7 @@ pub async fn create_strategy_milestone(
                 input.target_amount,
                 input.target_currency,
                 input.sort_order,
+                input.icon,
             ],
         )?;
         let milestone = conn.query_row(
@@ -177,6 +179,7 @@ pub async fn update_strategy_milestone(
         let target_amount = merge_nullable(input.target_amount, existing.target_amount);
         let target_currency = merge_nullable(input.target_currency, existing.target_currency);
         let sort_order = input.sort_order.unwrap_or(existing.sort_order);
+        let icon = merge_nullable(input.icon, existing.icon);
 
         conn.execute(
             "UPDATE strategy_milestones SET
@@ -186,8 +189,9 @@ pub async fn update_strategy_milestone(
                 target_amount = ?4,
                 target_currency = ?5,
                 sort_order = ?6,
+                icon = ?7,
                 updated_at = datetime('now')
-             WHERE id = ?7",
+             WHERE id = ?8",
             params![
                 label,
                 description,
@@ -195,6 +199,7 @@ pub async fn update_strategy_milestone(
                 target_amount,
                 target_currency,
                 sort_order,
+                icon,
                 id,
             ],
         )?;

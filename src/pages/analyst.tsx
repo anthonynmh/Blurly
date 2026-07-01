@@ -29,6 +29,7 @@ import { analysisService } from '@/services/analysis-service';
 import { holdingService } from '@/services/holding-service';
 import { settingsService } from '@/services/settings-service';
 import { strategyService } from '@/services/strategy-service';
+import { strategyReservationsService } from '@/services/strategy-reservations-service';
 import { buildAnalysisContext } from '@/lib/analysis';
 import { isWindows } from '@/lib/platform';
 import type { AnalysisRun, AnalysisType, AnalystPersona, ApiKeyStatus, TimeWindow } from '@/lib/types';
@@ -118,15 +119,28 @@ export default function AnalystPage() {
     queryKey: ['strategy-milestones'],
     queryFn: () => strategyService.listMilestones(),
   });
+  const { data: reservations } = useQuery({
+    queryKey: ['strategy-cash-reservations'],
+    queryFn: () => strategyReservationsService.list(),
+  });
 
   const context = useMemo(() => {
     if (!holdings || !appSettings || !aiSettings) return null;
-    return buildAnalysisContext(holdings, appSettings.baseCurrency, {
-      includeExactValues: aiSettings.includeExactValues,
-      includeQuantities: aiSettings.includeQuantities,
-      includeNotes: aiSettings.includeNotes,
-    }, appSettings.stalenessThresholdDays, strategy, milestones ?? []);
-  }, [holdings, appSettings, aiSettings, strategy, milestones]);
+    return buildAnalysisContext(
+      holdings,
+      appSettings.baseCurrency,
+      {
+        includeExactValues: aiSettings.includeExactValues,
+        includeQuantities: aiSettings.includeQuantities,
+        includeNotes: aiSettings.includeNotes,
+      },
+      appSettings.stalenessThresholdDays,
+      strategy,
+      milestones ?? [],
+      reservations ?? [],
+      appSettings.fxUsdSgdRate,
+    );
+  }, [holdings, appSettings, aiSettings, strategy, milestones, reservations]);
 
   const runMutation = useMutation({
     mutationFn: async () => {

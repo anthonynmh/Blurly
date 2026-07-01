@@ -31,14 +31,33 @@ fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnalystMessage> {
         role: row.get(2)?,
         content: row.get(3)?,
         sources_json: row.get(4)?,
-        created_at: row.get(5)?,
+        response_model: row.get(5)?,
+        created_at: row.get(6)?,
     })
 }
 
 const THREAD_SELECT: &str =
     "SELECT id, analysis_run_id, title, created_at, updated_at FROM analyst_threads";
-const MESSAGE_SELECT: &str =
-    "SELECT id, thread_id, role, content, sources_json, created_at FROM analyst_messages";
+const MESSAGE_SELECT: &str = "SELECT id, thread_id, role, content, sources_json, response_model, created_at FROM analyst_messages";
+
+/// Follow-up model whitelist. Ask Analyst is intentionally decoupled from the
+/// global ai_settings.model so users can pick per follow-up.
+const ALLOWED_RESPONSE_MODELS: &[&str] = &["gpt-4o", "gpt-5.5"];
+const DEFAULT_RESPONSE_MODEL: &str = "gpt-4o";
+
+fn resolve_response_model(input: Option<&str>) -> Result<String, CommandError> {
+    let candidate = input
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_RESPONSE_MODEL);
+    if ALLOWED_RESPONSE_MODELS.contains(&candidate) {
+        Ok(candidate.to_string())
+    } else {
+        Err(CommandError::Storage(format!(
+            "Unsupported Ask Analyst model: {candidate}. Allowed: gpt-4o, gpt-5.5"
+        )))
+    }
+}
 
 #[tauri::command]
 pub async fn list_analyst_threads(
@@ -150,6 +169,8 @@ pub async fn ask_analyst_question(
         ));
     }
 
+    let response_model = resolve_response_model(input.response_model.as_deref())?;
+
     let db = Arc::clone(&state.db);
     let setup = {
         let requested_thread_id = input.thread_id.clone();
@@ -243,7 +264,6 @@ pub async fn ask_analyst_question(
 
             Ok((
                 settings.provider,
-                settings.model,
                 settings.web_search_enabled,
                 thread.id,
                 selected_markdown,
@@ -257,13 +277,14 @@ pub async fn ask_analyst_question(
 
     let (
         provider_id,
-        model,
         web_search_enabled,
         thread_id,
         selected_markdown,
         prior_messages,
         user_message,
     ) = setup;
+    // Ask Analyst uses the per-follow-up override, not settings.model.
+    let model = response_model.clone();
 
     let key_result = {
         let provider_id = provider_id.clone();
@@ -298,17 +319,19 @@ pub async fn ask_analyst_question(
     let db = Arc::clone(&state.db);
     let assistant_content = output.markdown;
     let assistant_sources_json = serde_json::to_string(&output.sources)?;
+    let assistant_response_model = response_model;
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
         let assistant_message_id = Uuid::new_v4().to_string();
         conn.execute(
-            "INSERT INTO analyst_messages (id, thread_id, role, content, sources_json)
-             VALUES (?1, ?2, 'assistant', ?3, ?4)",
+            "INSERT INTO analyst_messages (id, thread_id, role, content, sources_json, response_model)
+             VALUES (?1, ?2, 'assistant', ?3, ?4, ?5)",
             params![
                 assistant_message_id,
                 thread_id,
                 assistant_content,
                 assistant_sources_json,
+                assistant_response_model,
             ],
         )?;
         conn.execute(

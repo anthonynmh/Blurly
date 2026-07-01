@@ -1,19 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Plus, Save, Trash2 } from 'lucide-react';
+import { MapPin, Plus, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { EmptyState } from '@/components/empty-state';
+import { MilestoneTimeline } from '@/components/strategy/milestone-timeline';
+import { MilestoneDialog } from '@/components/strategy/milestone-dialog';
+import { UntouchablesPanel } from '@/components/strategy/untouchables-panel';
+import { ReservationDialog } from '@/components/strategy/reservation-dialog';
+import { holdingService } from '@/services/holding-service';
+import { settingsService } from '@/services/settings-service';
 import { strategyService } from '@/services/strategy-service';
-import { describeMilestoneCountdown } from '@/lib/analysis';
-import { formatCurrency, formatDate, todayIso } from '@/lib/formatters';
-import type { InvestorPersonality, StrategyMilestone } from '@/lib/types';
+import { strategyReservationsService } from '@/services/strategy-reservations-service';
+import {
+  computeCashReservationSplit,
+  computeMilestoneReservations,
+} from '@/lib/calculations';
+import type {
+  InvestorPersonality,
+  StrategyCashReservation,
+  StrategyMilestone,
+} from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const PERSONALITIES: {
@@ -26,16 +38,21 @@ const PERSONALITIES: {
   { value: 'active', label: 'Active', description: 'Higher-touch monitoring and tactical changes.' },
 ];
 
+type MilestoneDialogMode =
+  | { kind: 'create' }
+  | { kind: 'edit'; milestone: StrategyMilestone }
+  | null;
+
+type ReservationDialogMode =
+  | { kind: 'create'; holdingId?: string; milestoneId?: string }
+  | { kind: 'edit'; reservation: StrategyCashReservation }
+  | null;
+
 export default function StrategyPage() {
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState('');
-  const [newMilestone, setNewMilestone] = useState({
-    label: '',
-    description: '',
-    targetDate: todayIso(),
-    targetAmount: '',
-    targetCurrency: 'USD',
-  });
+  const [milestoneDialog, setMilestoneDialog] = useState<MilestoneDialogMode>(null);
+  const [reservationDialog, setReservationDialog] = useState<ReservationDialogMode>(null);
 
   const { data: strategy, isLoading: strategyLoading } = useQuery({
     queryKey: ['investment-strategy'],
@@ -45,11 +62,21 @@ export default function StrategyPage() {
     queryKey: ['strategy-milestones'],
     queryFn: () => strategyService.listMilestones(),
   });
+  const { data: reservations } = useQuery({
+    queryKey: ['strategy-cash-reservations'],
+    queryFn: () => strategyReservationsService.list(),
+  });
+  const { data: holdings } = useQuery({
+    queryKey: ['holdings', 'default'],
+    queryFn: () => holdingService.list('default'),
+  });
+  const { data: appSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => settingsService.get(),
+  });
 
   useEffect(() => {
-    if (strategy) {
-      setNotes(strategy.notes ?? '');
-    }
+    if (strategy) setNotes(strategy.notes ?? '');
   }, [strategy]);
 
   const updateStrategy = useMutation({
@@ -64,14 +91,8 @@ export default function StrategyPage() {
   const createMilestone = useMutation({
     mutationFn: strategyService.createMilestone,
     onSuccess: () => {
-      setNewMilestone({
-        label: '',
-        description: '',
-        targetDate: todayIso(),
-        targetAmount: '',
-        targetCurrency: 'USD',
-      });
       void queryClient.invalidateQueries({ queryKey: ['strategy-milestones'] });
+      setMilestoneDialog(null);
       toast.success('Milestone added');
     },
     onError: (err: Error) => toast.error(err.message),
@@ -82,6 +103,7 @@ export default function StrategyPage() {
       strategyService.updateMilestone(id, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['strategy-milestones'] });
+      setMilestoneDialog(null);
       toast.success('Milestone saved');
     },
     onError: (err: Error) => toast.error(err.message),
@@ -91,40 +113,109 @@ export default function StrategyPage() {
     mutationFn: strategyService.deleteMilestone,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['strategy-milestones'] });
+      void queryClient.invalidateQueries({ queryKey: ['strategy-cash-reservations'] });
+      setMilestoneDialog(null);
       toast.success('Milestone deleted');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const createReservation = useMutation({
+    mutationFn: strategyReservationsService.create,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['strategy-cash-reservations'] });
+      setReservationDialog(null);
+      toast.success('Reservation linked');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const updateReservation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof strategyReservationsService.update>[1] }) =>
+      strategyReservationsService.update(id, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['strategy-cash-reservations'] });
+      setReservationDialog(null);
+      toast.success('Reservation updated');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteReservation = useMutation({
+    mutationFn: strategyReservationsService.delete,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['strategy-cash-reservations'] });
+      setReservationDialog(null);
+      toast.success('Reservation removed');
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
   const isLoading = strategyLoading || milestonesLoading;
   const selectedPersonality = strategy?.investorPersonality ?? 'hybrid';
+  const activePersonalityMeta = PERSONALITIES.find((p) => p.value === selectedPersonality);
+  const fxRate = appSettings?.fxUsdSgdRate;
+
+  const sortedMilestones = useMemo(() => {
+    const list = [...(milestones ?? [])];
+    // Timeline reads best in chronological order regardless of sort_order.
+    return list.sort((a, b) => a.targetDate.localeCompare(b.targetDate));
+  }, [milestones]);
+
+  const cashHoldings = useMemo(
+    () =>
+      (holdings ?? []).filter(
+        (h) => h.assetClass === 'Cash' || h.assetClass === 'MoneyMarket',
+      ),
+    [holdings],
+  );
+
+  const reservationSplit = useMemo(
+    () =>
+      computeCashReservationSplit(
+        holdings ?? [],
+        reservations ?? [],
+        appSettings?.baseCurrency ?? 'USD',
+        fxRate,
+      ),
+    [holdings, reservations, appSettings, fxRate],
+  );
+
+  const milestoneReservationSummaries = useMemo(
+    () => computeMilestoneReservations(milestones ?? [], reservations ?? [], fxRate),
+    [milestones, reservations, fxRate],
+  );
 
   function saveNotes() {
     updateStrategy.mutate({ notes: notes.trim() ? notes.trim() : null });
   }
 
-  function addMilestone() {
-    if (!newMilestone.label.trim()) {
-      toast.error('Milestone label is required');
-      return;
-    }
-    createMilestone.mutate({
-      label: newMilestone.label.trim(),
-      description: newMilestone.description.trim() || undefined,
-      targetDate: newMilestone.targetDate,
-      targetAmount: newMilestone.targetAmount ? Number(newMilestone.targetAmount) : undefined,
-      targetCurrency: newMilestone.targetAmount ? newMilestone.targetCurrency : undefined,
-      sortOrder: milestones?.length ?? 0,
-    });
-  }
+  const totalMilestones = milestones?.length ?? 0;
+  const totalReservationsCount = reservations?.length ?? 0;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Strategy</h1>
-        <p className="text-sm text-muted-foreground">
-          Investor personality, time horizon, and milestones used by the analyst.
-        </p>
+      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-transparent p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Strategy</h1>
+            <p className="text-sm text-muted-foreground">
+              Investor personality, time horizon, and milestones the analyst uses to reason about your portfolio.
+            </p>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <div>
+              <span className="font-medium text-foreground capitalize">{selectedPersonality}</span> tilt
+              {' · '}
+              {totalMilestones} milestone{totalMilestones === 1 ? '' : 's'}
+              {totalReservationsCount > 0 && ' · '}
+              {totalReservationsCount > 0 && `${totalReservationsCount} reserved`}
+            </div>
+            {activePersonalityMeta && (
+              <div className="mt-0.5 max-w-xs">{activePersonalityMeta.description}</div>
+            )}
+          </div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -149,11 +240,18 @@ export default function StrategyPage() {
                       onClick={() => updateStrategy.mutate({ investorPersonality: personality.value })}
                       className={cn(
                         'rounded-md border p-3 text-left transition-colors',
-                        active ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted',
+                        active
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'hover:bg-muted',
                       )}
                     >
                       <span className="block text-sm font-semibold">{personality.label}</span>
-                      <span className={cn('mt-1 block text-xs', active ? 'opacity-85' : 'text-muted-foreground')}>
+                      <span
+                        className={cn(
+                          'mt-1 block text-xs',
+                          active ? 'opacity-85' : 'text-muted-foreground',
+                        )}
+                      >
                         {personality.description}
                       </span>
                     </button>
@@ -179,198 +277,74 @@ export default function StrategyPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Milestones</CardTitle>
-              <CardDescription>Target dates give the analyst a concrete time horizon.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-6">
-                <div className="space-y-1 md:col-span-2">
-                  <Label htmlFor="new-milestone-label">Label</Label>
-                  <Input
-                    id="new-milestone-label"
-                    value={newMilestone.label}
-                    onChange={(e) => setNewMilestone((m) => ({ ...m, label: e.target.value }))}
-                    placeholder="House deposit"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="new-milestone-date">Target date</Label>
-                  <Input
-                    id="new-milestone-date"
-                    type="date"
-                    value={newMilestone.targetDate}
-                    onChange={(e) => setNewMilestone((m) => ({ ...m, targetDate: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="new-milestone-amount">Amount</Label>
-                  <Input
-                    id="new-milestone-amount"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={newMilestone.targetAmount}
-                    onChange={(e) => setNewMilestone((m) => ({ ...m, targetAmount: e.target.value }))}
-                    placeholder="50000"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="new-milestone-currency">Currency</Label>
-                  <Input
-                    id="new-milestone-currency"
-                    value={newMilestone.targetCurrency}
-                    onChange={(e) => setNewMilestone((m) => ({ ...m, targetCurrency: e.target.value.toUpperCase() }))}
-                    maxLength={3}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button className="w-full" onClick={addMilestone} disabled={createMilestone.isPending}>
-                    <Plus className="h-4 w-4" />
-                    Add
-                  </Button>
-                </div>
-                <div className="space-y-1 md:col-span-6">
-                  <Label htmlFor="new-milestone-description">Description</Label>
-                  <Input
-                    id="new-milestone-description"
-                    value={newMilestone.description}
-                    onChange={(e) => setNewMilestone((m) => ({ ...m, description: e.target.value }))}
-                    placeholder="Optional context for the analyst"
-                  />
-                </div>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>Milestones</CardTitle>
+                <CardDescription>Target dates give the analyst a concrete time horizon.</CardDescription>
               </div>
-
-              {milestones && milestones.length > 0 ? (
-                <div className="space-y-3">
-                  {milestones.map((milestone, index) => (
-                    <MilestoneRow
-                      key={milestone.id}
-                      milestone={milestone}
-                      index={index}
-                      onSave={(input) => updateMilestone.mutate({ id: milestone.id, input })}
-                      onDelete={() => deleteMilestone.mutate(milestone.id)}
-                      isSaving={updateMilestone.isPending}
-                      isDeleting={deleteMilestone.isPending}
-                    />
-                  ))}
-                </div>
+              <Button onClick={() => setMilestoneDialog({ kind: 'create' })}>
+                <Plus className="h-4 w-4" />
+                Add milestone
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {sortedMilestones.length > 0 ? (
+                <MilestoneTimeline
+                  milestones={sortedMilestones}
+                  reservationSummaries={milestoneReservationSummaries}
+                  onEdit={(m) => setMilestoneDialog({ kind: 'edit', milestone: m })}
+                />
               ) : (
-                <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  No milestones yet.
-                </div>
+                <EmptyState
+                  icon={MapPin}
+                  title="Plot your first milestone"
+                  description="Add a target date (house, wedding, career break) so the analyst can size time horizon and required funding."
+                  actionLabel="Add your first milestone"
+                  onAction={() => setMilestoneDialog({ kind: 'create' })}
+                />
               )}
             </CardContent>
           </Card>
+
+          <UntouchablesPanel
+            cashHoldings={cashHoldings}
+            reservations={reservations ?? []}
+            milestones={milestones ?? []}
+            perHolding={reservationSplit.perHolding}
+            onAdd={(holdingId) => setReservationDialog({ kind: 'create', holdingId })}
+            onEdit={(r) => setReservationDialog({ kind: 'edit', reservation: r })}
+          />
         </>
       )}
-    </div>
-  );
-}
 
-function MilestoneRow({
-  milestone,
-  index,
-  onSave,
-  onDelete,
-  isSaving,
-  isDeleting,
-}: {
-  milestone: StrategyMilestone;
-  index: number;
-  onSave: (input: Parameters<typeof strategyService.updateMilestone>[1]) => void;
-  onDelete: () => void;
-  isSaving: boolean;
-  isDeleting: boolean;
-}) {
-  const [label, setLabel] = useState(milestone.label);
-  const [description, setDescription] = useState(milestone.description ?? '');
-  const [targetDate, setTargetDate] = useState(milestone.targetDate);
-  const [targetAmount, setTargetAmount] = useState(
-    milestone.targetAmount != null ? String(milestone.targetAmount) : '',
-  );
-  const [targetCurrency, setTargetCurrency] = useState(milestone.targetCurrency ?? 'USD');
-  const countdown = describeMilestoneCountdown(milestone.targetDate);
-  const overdue = countdown.startsWith('overdue');
+      {milestoneDialog && (
+        <MilestoneDialog
+          open={!!milestoneDialog}
+          onOpenChange={(open) => !open && setMilestoneDialog(null)}
+          mode={milestoneDialog}
+          defaultSortOrder={milestones?.length ?? 0}
+          onCreate={(input) => createMilestone.mutate(input)}
+          onUpdate={(id, input) => updateMilestone.mutate({ id, input })}
+          onDelete={(id) => deleteMilestone.mutate(id)}
+          isSaving={createMilestone.isPending || updateMilestone.isPending}
+          isDeleting={deleteMilestone.isPending}
+        />
+      )}
 
-  return (
-    <div className="grid grid-cols-1 gap-3 rounded-md border p-3 md:grid-cols-[2rem_1.5fr_1fr_1fr_auto]">
-      <div className="flex items-start justify-center pt-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-          {index + 1}
-        </span>
-      </div>
-      <div className="space-y-2">
-        <Input value={label} onChange={(e) => setLabel(e.target.value)} />
-        <Input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Optional description"
+      {reservationDialog && (
+        <ReservationDialog
+          open={!!reservationDialog}
+          onOpenChange={(open) => !open && setReservationDialog(null)}
+          mode={reservationDialog}
+          cashHoldings={cashHoldings}
+          milestones={milestones ?? []}
+          onCreate={(input) => createReservation.mutate(input)}
+          onUpdate={(id, input) => updateReservation.mutate({ id, input })}
+          onDelete={(id) => deleteReservation.mutate(id)}
+          isSaving={createReservation.isPending || updateReservation.isPending}
+          isDeleting={deleteReservation.isPending}
         />
-      </div>
-      <div className="space-y-2">
-        <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
-        <Badge
-          variant="secondary"
-          className={cn(
-            'gap-1',
-            overdue ? 'border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-400' : '',
-          )}
-        >
-          <CalendarDays className="h-3 w-3" />
-          {countdown}
-        </Badge>
-        <p className="text-xs text-muted-foreground">{formatDate(milestone.targetDate)}</p>
-      </div>
-      <div className="space-y-2">
-        <Input
-          type="number"
-          min="0"
-          step="any"
-          value={targetAmount}
-          onChange={(e) => setTargetAmount(e.target.value)}
-          placeholder="Amount"
-        />
-        <Input
-          value={targetCurrency}
-          onChange={(e) => setTargetCurrency(e.target.value.toUpperCase())}
-          maxLength={3}
-        />
-        {milestone.targetAmount != null && milestone.targetCurrency && (
-          <p className="text-xs text-muted-foreground">
-            {formatCurrency(milestone.targetAmount, milestone.targetCurrency)}
-          </p>
-        )}
-      </div>
-      <div className="flex items-start gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() =>
-            onSave({
-              label: label.trim(),
-              description: description.trim() || null,
-              targetDate,
-              targetAmount: targetAmount ? Number(targetAmount) : null,
-              targetCurrency: targetAmount ? targetCurrency.trim().toUpperCase() : null,
-              sortOrder: index,
-            })
-          }
-          disabled={isSaving || !label.trim()}
-          title="Save milestone"
-        >
-          <Save className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onDelete}
-          disabled={isDeleting}
-          title="Delete milestone"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
+      )}
     </div>
   );
 }

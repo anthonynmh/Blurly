@@ -11,5 +11,6 @@ pub mod settings;
 pub mod signing;
 pub mod snapshots;
 pub mod strategy;
+pub mod strategy_reservations;
 pub mod twelve_data;
 pub mod watchlist;

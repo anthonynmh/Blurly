@@ -1,14 +1,19 @@
 import type {
+  AnalysisMilestoneReservationContext,
   AnalysisPortfolioContext,
+  AnalysisStrategyCashSplitContext,
   Holding,
   HoldingAnalysisInput,
   HoldingWithComputedValues,
   InvestmentStrategy,
   PrivacyFlags,
+  StrategyCashReservation,
   StrategyMilestone,
 } from './types';
 import {
+  computeCashReservationSplit,
   computeHoldingsWithValues,
+  computeMilestoneReservations,
   computePortfolioSummary,
   groupByAssetClass,
   groupByRegion,
@@ -40,6 +45,8 @@ export function buildAnalysisContext(
   stalenessThresholdDays?: number,
   strategy?: InvestmentStrategy,
   milestones: StrategyMilestone[] = [],
+  reservations: StrategyCashReservation[] = [],
+  fxUsdSgdRate?: number,
 ): AnalysisPortfolioContext {
   const withValues = computeHoldingsWithValues(holdings, baseCurrency, stalenessThresholdDays);
   const baseHoldings = withValues.filter((h) => h.currency === baseCurrency);
@@ -104,19 +111,70 @@ export function buildAnalysisContext(
   };
 
   if (strategy) {
+    const milestoneReservations = computeMilestoneReservations(
+      milestones,
+      reservations,
+      fxUsdSgdRate,
+    );
+    const holdingById = new Map(holdings.map((h) => [h.id, h]));
+
     context.strategy = {
       investorPersonality: strategy.investorPersonality,
       notes: strategy.notes,
-      milestones: milestones.map((m) => ({
-        label: m.label,
-        description: m.description,
-        targetDate: m.targetDate,
-        targetAmount: m.targetAmount,
-        targetCurrency: m.targetCurrency,
-        countdown: describeMilestoneCountdown(m.targetDate),
-        isOverdue: isPastDate(m.targetDate),
-      })),
+      milestones: milestones.map((m) => {
+        const summary = milestoneReservations.get(m.id);
+        const linked = summary?.reservations ?? [];
+        const reservationsContext: AnalysisMilestoneReservationContext[] | undefined =
+          linked.length > 0
+            ? linked.map((r) => {
+                const h = holdingById.get(r.holdingId);
+                return {
+                  amount: privacy.includeExactValues ? r.amount : undefined,
+                  currency: r.currency,
+                  holdingSymbol: h?.symbol ?? 'unknown',
+                  holdingName: h?.name,
+                  notes: privacy.includeNotes ? r.notes : undefined,
+                };
+              })
+            : undefined;
+        return {
+          label: m.label,
+          description: m.description,
+          targetDate: m.targetDate,
+          targetAmount: m.targetAmount,
+          targetCurrency: m.targetCurrency,
+          countdown: describeMilestoneCountdown(m.targetDate),
+          isOverdue: isPastDate(m.targetDate),
+          reservations: reservationsContext,
+          totalReservedInTargetCurrency:
+            privacy.includeExactValues && summary && !summary.fxMissing && m.targetCurrency
+              ? summary.totalReservedInTargetCurrency
+              : undefined,
+          fxMissing: summary?.fxMissing ? true : undefined,
+        };
+      }),
     };
+
+    // Strategy-wide cash split
+    if (reservations.length > 0) {
+      const split = computeCashReservationSplit(
+        holdings,
+        reservations,
+        baseCurrency,
+        fxUsdSgdRate,
+      );
+      const cashSplit: AnalysisStrategyCashSplitContext = {
+        fxMissing: split.fxMissing ? true : undefined,
+      };
+      if (privacy.includeExactValues) {
+        cashSplit.totalCashAndMoneyMarket = split.totalCashAndMoneyMarket;
+        if (!split.fxMissing) {
+          cashSplit.totalReserved = split.totalReserved;
+          cashSplit.estimatedCashDrag = split.estimatedCashDrag;
+        }
+      }
+      context.strategy.cashSplit = cashSplit;
+    }
   }
 
   return context;

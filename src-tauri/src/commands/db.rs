@@ -38,6 +38,12 @@ pub fn init_db(path: &Path) -> Result<Connection, CommandError> {
         M::up(include_str!("../../migrations/009_analyst_persona.sql")),
         M::up(include_str!("../../migrations/010_strategy.sql")),
         M::up(include_str!("../../migrations/011_analyst_threads.sql")),
+        M::up(include_str!(
+            "../../migrations/012_strategy_cash_reservations.sql"
+        )),
+        M::up(include_str!(
+            "../../migrations/013_analyst_message_model.sql"
+        )),
     ]);
 
     migrations.to_latest(&mut conn)?;
