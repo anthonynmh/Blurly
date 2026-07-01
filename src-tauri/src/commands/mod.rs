@@ -1,6 +1,7 @@
 pub mod ai_keys;
 pub mod ai_settings;
 pub mod analysis;
+pub mod analyst_chat;
 pub mod db;
 pub mod fx;
 pub mod holdings;
@@ -9,5 +10,7 @@ pub mod portfolio;
 pub mod settings;
 pub mod signing;
 pub mod snapshots;
+pub mod strategy;
+pub mod strategy_reservations;
 pub mod twelve_data;
 pub mod watchlist;

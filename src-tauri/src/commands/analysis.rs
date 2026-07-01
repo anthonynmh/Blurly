@@ -168,22 +168,17 @@ pub async fn run_analysis(
     };
 
     // 3. Call the provider on the async runtime (reqwest is async).
+    let provider = OpenAiProvider;
+    let analysis_request = AnalysisRequest {
+        model: &model,
+        analysis_type: &input.analysis_type,
+        time_window: &input.time_window,
+        web_search_enabled,
+        input_context_json: &input.input_context_json,
+        persona: &persona,
+    };
     let provider_result = match provider_id.as_str() {
-        "openai" => {
-            OpenAiProvider
-                .run_analysis(
-                    &key,
-                    AnalysisRequest {
-                        model: &model,
-                        analysis_type: &input.analysis_type,
-                        time_window: &input.time_window,
-                        web_search_enabled,
-                        input_context_json: &input.input_context_json,
-                        persona: &persona,
-                    },
-                )
-                .await
-        }
+        "openai" => provider.run_analysis(&key, analysis_request.clone()).await,
         other => Err(format!("Unknown provider: {other}")),
     };
 

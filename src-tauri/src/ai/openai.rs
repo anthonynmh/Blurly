@@ -45,6 +45,22 @@ pub struct AnalysisOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowUpMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FollowUpRequest<'a> {
+    pub model: &'a str,
+    pub web_search_enabled: bool,
+    pub context_json: &'a str,
+    pub analysis_markdown: Option<&'a str>,
+    pub prior_messages: &'a [FollowUpMessage],
+    pub question: &'a str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -112,6 +128,67 @@ impl OpenAiProvider {
 
         let timeout_secs = if req.persona == "deep" { 900 } else { 90 };
         let res = http_client(timeout_secs)
+            .post(RESPONSES_URL)
+            .bearer_auth(key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {e}"))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            return Err(format!(
+                "OpenAI {status}: {}",
+                body.chars().take(500).collect::<String>()
+            ));
+        }
+
+        let payload: Value = res.json().await.map_err(|e| format!("Bad JSON: {e}"))?;
+        Ok(parse_responses_payload(&payload))
+    }
+
+    pub async fn run_follow_up(
+        &self,
+        key: &str,
+        req: FollowUpRequest<'_>,
+    ) -> Result<AnalysisOutput, String> {
+        let system = "You are Blurly's portfolio analyst answering follow-up questions. \
+Use the selected analysis memo, current holdings context, investment strategy, and prior thread messages. \
+Be direct, cite sources when web search is enabled, and avoid direct buy/sell instructions. \
+When context is missing or stale, say so clearly.";
+        let selected_analysis = req.analysis_markdown.unwrap_or(
+            "No successful historical analysis was selected. Use only current context and state that no prior memo is available.",
+        );
+        let mut input = vec![
+            json!({ "role": "system", "content": system }),
+            json!({
+                "role": "user",
+                "content": format!(
+                    "Selected analysis memo:\n{}\n\nCurrent portfolio, strategy, and milestone context JSON:\n{}",
+                    selected_analysis,
+                    req.context_json,
+                )
+            }),
+        ];
+
+        for message in req.prior_messages {
+            input.push(json!({
+                "role": message.role,
+                "content": message.content,
+            }));
+        }
+        input.push(json!({ "role": "user", "content": req.question }));
+
+        let mut body = json!({
+            "model": req.model,
+            "input": input,
+        });
+        if req.web_search_enabled {
+            body["tools"] = json!([{ "type": "web_search" }]);
+        }
+
+        let res = http_client(90)
             .post(RESPONSES_URL)
             .bearer_auth(key)
             .json(&body)

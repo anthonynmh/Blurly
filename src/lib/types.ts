@@ -358,6 +358,8 @@ export interface AnalysisPortfolioContext {
   staleHoldingsCount: number;
   /** Always included — earliest asOfDate across all holdings. */
   oldestAsOfDate: string;
+  /** Optional user-defined strategy and milestones. */
+  strategy?: AnalysisStrategyContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,4 +375,182 @@ export interface BulkPriceUpdate {
 export interface AnalysisSource {
   title?: string;
   url: string;
+}
+
+// ---------------------------------------------------------------------------
+// Strategy
+// ---------------------------------------------------------------------------
+
+export type InvestorPersonality = 'passive' | 'hybrid' | 'active';
+
+export interface InvestmentStrategy {
+  investorPersonality: InvestorPersonality | string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateInvestmentStrategy {
+  investorPersonality?: InvestorPersonality;
+  notes?: string | null;
+}
+
+/** Milestone currency is intentionally restricted to SGD or USD (see currency-scope memory). */
+export type MilestoneCurrency = 'SGD' | 'USD';
+
+/** Lucide icon slugs allowed for milestones. Grow the set freely — no DB constraint. */
+export const MILESTONE_ICONS = [
+  'Home',
+  'Plane',
+  'GraduationCap',
+  'Gem',
+  'Baby',
+  'Briefcase',
+  'PiggyBank',
+  'Car',
+  'Sparkles',
+] as const;
+export type MilestoneIcon = (typeof MILESTONE_ICONS)[number];
+
+export interface StrategyMilestone {
+  id: string;
+  label: string;
+  description?: string;
+  targetDate: string;
+  targetAmount?: number;
+  targetCurrency?: string;
+  sortOrder: number;
+  icon?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NewStrategyMilestone = Omit<StrategyMilestone, 'id' | 'createdAt' | 'updatedAt'>;
+export type UpdateStrategyMilestone = Partial<{
+  label: string;
+  description: string | null;
+  targetDate: string;
+  targetAmount: number | null;
+  targetCurrency: string | null;
+  sortOrder: number;
+  icon: string | null;
+}>;
+
+export interface StrategyCashReservation {
+  id: string;
+  holdingId: string;
+  milestoneId: string;
+  amount: number;
+  currency: MilestoneCurrency;
+  notes?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NewStrategyCashReservation = Omit<
+  StrategyCashReservation,
+  'id' | 'createdAt' | 'updatedAt'
+>;
+
+export type UpdateStrategyCashReservation = Partial<{
+  holdingId: string;
+  milestoneId: string;
+  amount: number;
+  currency: MilestoneCurrency;
+  notes: string | null;
+  sortOrder: number;
+}>;
+
+export interface AnalysisMilestoneReservationContext {
+  /** Reservation amount in its own currency; only present when includeExactValues. */
+  amount?: number;
+  currency: string;
+  holdingSymbol: string;
+  holdingName?: string;
+  notes?: string;
+}
+
+export interface AnalysisStrategyMilestoneContext {
+  label: string;
+  description?: string;
+  targetDate: string;
+  targetAmount?: number;
+  targetCurrency?: string;
+  countdown: string;
+  isOverdue: boolean;
+  /** Milestone-linked cash reservations (untouchable cash). */
+  reservations?: AnalysisMilestoneReservationContext[];
+  /** Sum of reservations converted to targetCurrency; only present when includeExactValues + FX known. */
+  totalReservedInTargetCurrency?: number;
+  /** True when totalReservedInTargetCurrency could not be computed due to missing FX. */
+  fxMissing?: boolean;
+}
+
+export interface AnalysisStrategyCashSplitContext {
+  /** Base-currency total across Cash/MoneyMarket holdings; only present when includeExactValues. */
+  totalCashAndMoneyMarket?: number;
+  /** Sum of reservations converted to base currency; only present when includeExactValues + FX known. */
+  totalReserved?: number;
+  /** totalCashAndMoneyMarket − totalReserved; only present when both above are present. */
+  estimatedCashDrag?: number;
+  /** True when FX rate is missing so amount-based fields could not be computed. */
+  fxMissing?: boolean;
+}
+
+export interface AnalysisStrategyContext {
+  investorPersonality: string;
+  notes?: string;
+  milestones: AnalysisStrategyMilestoneContext[];
+  cashSplit?: AnalysisStrategyCashSplitContext;
+}
+
+// ---------------------------------------------------------------------------
+// Analyst chat
+// ---------------------------------------------------------------------------
+
+export interface AnalystThread {
+  id: string;
+  analysisRunId?: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnalystMessage {
+  id: string;
+  threadId: string;
+  role: 'user' | 'assistant' | string;
+  content: string;
+  sourcesJson?: string;
+  /** Model id that produced an assistant message ('gpt-4o' | 'gpt-5.5'). */
+  responseModel?: string;
+  createdAt: string;
+}
+
+export interface AnalystThreadDetail {
+  thread: AnalystThread;
+  messages: AnalystMessage[];
+}
+
+export interface NewAnalystThread {
+  analysisRunId?: string;
+  title?: string;
+}
+
+/** Per-follow-up model choice for Ask Analyst. Defaults to gpt-4o server-side. */
+export type AskAnalystModel = 'gpt-4o' | 'gpt-5.5';
+
+export interface AskAnalystInput {
+  threadId?: string;
+  analysisRunId?: string;
+  question: string;
+  contextJson: string;
+  responseModel?: AskAnalystModel;
+}
+
+export interface AskAnalystResult {
+  thread: AnalystThread;
+  userMessage: AnalystMessage;
+  assistantMessage: AnalystMessage;
 }

@@ -28,6 +28,8 @@ import { aiSettingsService } from '@/services/ai-settings-service';
 import { analysisService } from '@/services/analysis-service';
 import { holdingService } from '@/services/holding-service';
 import { settingsService } from '@/services/settings-service';
+import { strategyService } from '@/services/strategy-service';
+import { strategyReservationsService } from '@/services/strategy-reservations-service';
 import { buildAnalysisContext } from '@/lib/analysis';
 import { isWindows } from '@/lib/platform';
 import type { AnalysisRun, AnalysisType, AnalystPersona, ApiKeyStatus, TimeWindow } from '@/lib/types';
@@ -109,15 +111,36 @@ export default function AnalystPage() {
     queryKey: ['holdings', 'default'],
     queryFn: () => holdingService.list('default'),
   });
+  const { data: strategy } = useQuery({
+    queryKey: ['investment-strategy'],
+    queryFn: () => strategyService.get(),
+  });
+  const { data: milestones } = useQuery({
+    queryKey: ['strategy-milestones'],
+    queryFn: () => strategyService.listMilestones(),
+  });
+  const { data: reservations } = useQuery({
+    queryKey: ['strategy-cash-reservations'],
+    queryFn: () => strategyReservationsService.list(),
+  });
 
   const context = useMemo(() => {
     if (!holdings || !appSettings || !aiSettings) return null;
-    return buildAnalysisContext(holdings, appSettings.baseCurrency, {
-      includeExactValues: aiSettings.includeExactValues,
-      includeQuantities: aiSettings.includeQuantities,
-      includeNotes: aiSettings.includeNotes,
-    });
-  }, [holdings, appSettings, aiSettings]);
+    return buildAnalysisContext(
+      holdings,
+      appSettings.baseCurrency,
+      {
+        includeExactValues: aiSettings.includeExactValues,
+        includeQuantities: aiSettings.includeQuantities,
+        includeNotes: aiSettings.includeNotes,
+      },
+      appSettings.stalenessThresholdDays,
+      strategy,
+      milestones ?? [],
+      reservations ?? [],
+      appSettings.fxUsdSgdRate,
+    );
+  }, [holdings, appSettings, aiSettings, strategy, milestones, reservations]);
 
   const runMutation = useMutation({
     mutationFn: async () => {
@@ -195,6 +218,11 @@ export default function AnalystPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">{selectedPersona.description}</p>
+              {persona === 'deep' && analysisType === 'PortfolioReview' && (
+                <p className="text-xs text-muted-foreground">
+                  Portfolio Review with Deep Research is about $2 USD per 10 holdings.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Analysis type</label>

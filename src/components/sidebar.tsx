@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { BarChart3, Eye, History, KeyRound, Layers, Settings, Sparkles } from 'lucide-react';
+import { BarChart3, Eye, History, KeyRound, Layers, MessageSquare, Settings, Sparkles, Target } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getVersion } from '@tauri-apps/api/app';
 import { cn } from '@/lib/utils';
@@ -16,8 +16,15 @@ const NAV_GROUPS = [
   {
     label: 'Analyst',
     items: [
-      { to: '/analyst', label: 'Analyst', icon: Sparkles, end: false },
+      { to: '/analyst', label: 'Analyst', icon: Sparkles, end: true },
+      { to: '/analyst/ask', label: 'Ask Analyst', icon: MessageSquare, end: false },
       { to: '/analysis-history', label: 'Analysis History', icon: History, end: false },
+    ],
+  },
+  {
+    label: 'Strategy',
+    items: [
+      { to: '/strategy', label: 'Strategy', icon: Target, end: false },
     ],
   },
   {

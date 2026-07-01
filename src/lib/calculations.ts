@@ -1,10 +1,12 @@
 import type {
+  Breakdown,
   Holding,
   HoldingWithComputedValues,
   Portfolio,
-  PortfolioSummary,
   PortfolioSnapshot,
-  Breakdown,
+  PortfolioSummary,
+  StrategyCashReservation,
+  StrategyMilestone,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -408,4 +410,164 @@ export function buildPortfolioSnapshot(
       region: groupByRegion(baseHoldings),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Milestone-linked cash reservations ("untouchables")
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert `amount` from `fromCurrency` into `toCurrency`.
+ * Returns `null` when currencies differ but no FX rate is provided.
+ * `fxUsdSgdRate` is stored as "1 USD = N SGD" (matches Settings.fxUsdSgdRate).
+ */
+export function convertSgdUsd(
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  fxUsdSgdRate: number | undefined,
+): number | null {
+  const from = fromCurrency.toUpperCase();
+  const to = toCurrency.toUpperCase();
+  if (from === to) return amount;
+  if (fxUsdSgdRate == null || !isFinite(fxUsdSgdRate) || fxUsdSgdRate <= 0) return null;
+  if (from === 'USD' && to === 'SGD') return amount * fxUsdSgdRate;
+  if (from === 'SGD' && to === 'USD') return amount / fxUsdSgdRate;
+  // Anything else falls outside the app's SGD/USD scope — return null.
+  return null;
+}
+
+export interface HoldingCashSplit {
+  totalValue: number;
+  totalReserved: number;
+  available: number;
+  overReserved: boolean;
+  fxMissing: boolean;
+}
+
+export interface CashReservationSplit {
+  perHolding: Map<string, HoldingCashSplit>;
+  totalReserved: number;
+  totalCashAndMoneyMarket: number;
+  estimatedCashDrag: number;
+  fxMissing: boolean;
+}
+
+/**
+ * Compute the reserved vs available split for cash-equivalent holdings.
+ *
+ * - Only holdings in `baseCurrency` count toward `totalCashAndMoneyMarket`, matching
+ *   the existing `cashAndMoneyMarketValue` filter in analysis.ts.
+ * - Reservations are converted into each holding's currency for the per-holding
+ *   split, and into `baseCurrency` for the totals. When a conversion is needed
+ *   and no FX rate is available, that reservation contributes 0 and `fxMissing`
+ *   is set on the affected holding / on the top-level totals.
+ */
+export function computeCashReservationSplit(
+  holdings: Holding[],
+  reservations: StrategyCashReservation[],
+  baseCurrency: string,
+  fxUsdSgdRate?: number,
+): CashReservationSplit {
+  const cashHoldings = holdings.filter(
+    (h) => h.assetClass === 'Cash' || h.assetClass === 'MoneyMarket',
+  );
+  const perHolding = new Map<string, HoldingCashSplit>();
+  let totalReservedInBase = 0;
+  let totalCashInBase = 0;
+  let topLevelFxMissing = false;
+
+  for (const holding of cashHoldings) {
+    const totalValue = computeMarketValue(holding);
+    const linked = reservations.filter((r) => r.holdingId === holding.id);
+    let holdingReserved = 0;
+    let holdingFxMissing = false;
+    for (const r of linked) {
+      const converted = convertSgdUsd(r.amount, r.currency, holding.currency, fxUsdSgdRate);
+      if (converted == null) {
+        holdingFxMissing = true;
+      } else {
+        holdingReserved += converted;
+      }
+    }
+    const available = totalValue - holdingReserved;
+    perHolding.set(holding.id, {
+      totalValue,
+      totalReserved: holdingReserved,
+      available,
+      overReserved: holdingReserved > totalValue + 1e-6,
+      fxMissing: holdingFxMissing,
+    });
+
+    if (holding.currency === baseCurrency) {
+      totalCashInBase += totalValue;
+    }
+  }
+
+  for (const r of reservations) {
+    const converted = convertSgdUsd(r.amount, r.currency, baseCurrency, fxUsdSgdRate);
+    if (converted == null) {
+      topLevelFxMissing = true;
+    } else {
+      totalReservedInBase += converted;
+    }
+  }
+
+  return {
+    perHolding,
+    totalReserved: totalReservedInBase,
+    totalCashAndMoneyMarket: totalCashInBase,
+    estimatedCashDrag: totalCashInBase - totalReservedInBase,
+    fxMissing: topLevelFxMissing,
+  };
+}
+
+export interface MilestoneReservationSummary {
+  reservations: StrategyCashReservation[];
+  /** Sum in the milestone's own targetCurrency (falls back to baseCurrency when unset). */
+  totalReservedInTargetCurrency: number;
+  /** True when any reservation could not be converted into the milestone currency. */
+  fxMissing: boolean;
+  /** Raw per-currency sums, kept so the UI can show `SGD 20k + USD 5k reserved` when FX is missing. */
+  byCurrency: Record<string, number>;
+}
+
+/**
+ * Group reservations by milestone id and compute the total reserved amount in
+ * each milestone's currency. If the milestone has no `targetCurrency`, the raw
+ * per-currency sums are still returned.
+ */
+export function computeMilestoneReservations(
+  milestones: StrategyMilestone[],
+  reservations: StrategyCashReservation[],
+  fxUsdSgdRate?: number,
+): Map<string, MilestoneReservationSummary> {
+  const out = new Map<string, MilestoneReservationSummary>();
+  for (const m of milestones) {
+    const linked = reservations.filter((r) => r.milestoneId === m.id);
+    const byCurrency: Record<string, number> = {};
+    for (const r of linked) {
+      byCurrency[r.currency] = (byCurrency[r.currency] ?? 0) + r.amount;
+    }
+    let totalInTarget = 0;
+    let fxMissing = false;
+    const target = m.targetCurrency ?? null;
+    if (target) {
+      for (const r of linked) {
+        const converted = convertSgdUsd(r.amount, r.currency, target, fxUsdSgdRate);
+        if (converted == null) {
+          fxMissing = true;
+        } else {
+          totalInTarget += converted;
+        }
+      }
+    }
+    out.set(m.id, {
+      reservations: linked,
+      totalReservedInTargetCurrency: totalInTarget,
+      fxMissing,
+      byCurrency,
+    });
+  }
+  return out;
 }

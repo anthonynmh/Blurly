@@ -301,12 +301,12 @@ export function HoldingForm({
                   />
                   <FormField
                     control={form.control}
-                    name="broker"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Broker</FormLabel>
+                  name="broker"
+                  render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Broker app</FormLabel>
                         <FormControl>
-                          <Input placeholder="Fidelity" {...field} />
+                          <Input placeholder="moomoo, Webull, IBKR, Tiger" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
